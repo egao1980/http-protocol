@@ -13,3 +13,23 @@
              (format s "Unsupported Content-Encoding: ~S~@[ — ~A~]"
                      (unsupported-content-coding-coding c)
                      (http-error-message c)))))
+
+(define-condition unsupported-operation (http-protocol-error)
+  ((operation :initarg :operation :reader unsupported-operation-operation :initform nil))
+  (:report (lambda (c s)
+             (format s "Unsupported HTTP operation~@[ ~S~]~@[ — ~A~]"
+                     (unsupported-operation-operation c)
+                     (http-error-message c)))))
+
+(define-condition http-connection-error (http-error) ())
+(define-condition http-timeout-error (http-error) ())
+(define-condition http-tls-error (http-error) ())
+(define-condition http-redirect-error (http-error) ())
+(define-condition http-canceled (http-error) ())
+
+(define-condition http-status-error (http-error)
+  ((response :initarg :response :reader http-status-error-response)
+   (status :initarg :status :reader http-status-error-status)))
+
+(define-condition http-client-error (http-status-error) ())
+(define-condition http-server-error (http-status-error) ())

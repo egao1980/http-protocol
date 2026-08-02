@@ -16,12 +16,28 @@
     (error 'unsupported-operation :operation 'send
            :message (format nil "backend ~A does not implement SEND" (backend-name backend)))))
 
-(defgeneric send-async (backend client request &key)
-  (:documentation "Async SEND → promise/handle. Wave-1 sync backends signal unsupported.")
-  (:method ((backend http-backend) client request &key)
-    (declare (ignore client request))
+(defgeneric send-async (backend client request &key callback error-callback)
+  (:documentation
+   "Start REQUEST asynchronously on CLIENT.
+
+    Protocol primitive (callback + cancel token). CALLBACK is called with an
+    HTTP-RESPONSE on success; ERROR-CALLBACK with a condition on failure.
+    Returns an opaque handle for CANCEL-REQUEST.
+
+    Facade layers wrap this as a Blackbird-shaped promise — backends must not
+    hard-depend on Blackbird.")
+  (:method ((backend http-backend) client request &key callback error-callback)
+    (declare (ignore client request callback error-callback))
     (error 'unsupported-operation :operation 'send-async
            :message (format nil "backend ~A does not implement SEND-ASYNC" (backend-name backend)))))
+
+(defgeneric cancel-request (backend handle)
+  (:documentation "Cancel an in-flight SEND-ASYNC handle.")
+  (:method ((backend http-backend) handle)
+    (declare (ignore handle))
+    (error 'unsupported-operation :operation 'cancel-request
+           :message (format nil "backend ~A does not implement CANCEL-REQUEST"
+                            (backend-name backend)))))
 
 (defun raise-for-status (response)
   "Signal http-client-error / http-server-error when status is 4xx/5xx."

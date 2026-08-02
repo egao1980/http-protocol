@@ -77,19 +77,28 @@
            #:make-http-client
            #:send
            #:send-async
+           #:cancel-request
            #:raise-for-status))
 
 (defpackage #:http
   (:use #:cl #:http-protocol)
   (:shadow #:get #:delete)
   (:export #:request
+           #:request-async
            #:get
+           #:get-async
            #:head
+           #:head-async
            #:options
+           #:options-async
            #:post
+           #:post-async
            #:put
+           #:put-async
            #:patch
+           #:patch-async
            #:delete
+           #:delete-async
            #:with-client
            ;; Re-export common response accessors for DX
            #:response-status

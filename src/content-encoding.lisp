@@ -1,13 +1,26 @@
 (in-package #:http-protocol)
 
-;;; HTTP Content-Encoding pipeline (RFC 9110 §8.4).
-;;; Distinct from cl-mime's DECODE-CONTENT / ENCODE-CONTENT (transfer encodings).
+;;; HTTP Content-Encoding protocol (RFC 9110 §8.4).
+;;; Distinct from cl-mime DECODE-CONTENT / ENCODE-CONTENT (CTE).
+;;;
+;;; Backends (separate packages, event-backend pattern):
+;;;   http-encoding-chipz   — :gzip :deflate
+;;;   http-encoding-brotli  — :br   (soft; needs cl-stack-brotli natives)
+;;;   http-encoding-zstd    — :zstd (soft; needs cl-stack-zstd natives)
+;;;
+;;; No plugin registry: load the ASDF system; methods appear. Soft-load
+;;; probes *content-coding-systems* for Accept-Encoding.
 
-(defvar *warned-missing-overlays* nil
-  "Codings we already warned about when probing overlays.")
+(defparameter *content-coding-systems*
+  '((:gzip . "http-encoding-chipz")
+    (:deflate . "http-encoding-chipz")
+    (:br . "http-encoding-brotli")
+    (:zstd . "http-encoding-zstd"))
+  "Alist coding → ASDF system that specializes DECODE/ENCODE-CONTENT-CODING.")
 
-(defvar *brotli-available* :unknown)
-(defvar *zstd-available* :unknown)
+(defvar *warned-missing-overlays* nil)
+(defvar *coding-availability* (make-hash-table :test #'eq)
+  "Cache: coding → T / NIL / :unknown")
 
 (defun normalize-content-coding (coding)
   "Return a keyword coding (:gzip :deflate :br :zstd :identity) or NIL if blank."
@@ -33,8 +46,8 @@
     (symbol (normalize-content-coding (string coding)))))
 
 (defun parse-content-encoding (header)
-  "Parse a Content-Encoding / Accept-Encoding header value into coding keywords.
-   Accept-Encoding q-values are ignored (presence only). Returns list in header order."
+  "Parse Content-Encoding / Accept-Encoding into coding keywords (header order).
+   Accept-Encoding q-values ignored (presence only)."
   (when (null header)
     (return-from parse-content-encoding '()))
   (let ((s (etypecase header
@@ -46,7 +59,8 @@
           for coding = (normalize-content-coding (string-trim '(#\Space #\Tab) coding-part))
           when coding collect coding)))
 
-(defun %octet-vector (input)
+(defun coerce-to-octets (input)
+  "Coerce INPUT (octet vector or string) to a simple (unsigned-byte 8) vector."
   (etypecase input
     ((simple-array (unsigned-byte 8) (*)) input)
     ((vector (unsigned-byte 8))
@@ -54,13 +68,14 @@
     (string
      (map '(simple-array (unsigned-byte 8) (*)) #'char-code input))))
 
+;; Back-compat internal name used by around methods.
+(defun %octet-vector (input) (coerce-to-octets input))
+
 (defun %try-asdf-system (name)
-  "Load NAME if present. Skips nested ASDF OPERATE during TEST-OP (soft overlay)."
+  "Load NAME if present. Skips nested ASDF OPERATE during TEST-OP."
   (let ((sys (asdf:find-system name nil)))
     (cond ((null sys) nil)
           ((asdf:component-loaded-p sys) t)
-          ;; Nested OPERATE during TEST-OP is deprecated; treat as unavailable
-          ;; unless the overlay was already loaded by the consumer/CI.
           ((and (boundp 'asdf::*asdf-session*)
                 asdf::*asdf-session*
                 (plusp (hash-table-count
@@ -71,63 +86,54 @@
                (progn (asdf:load-system sys) t)
              (error () nil))))))
 
-(defun %probe-overlay (system package compress-name decompress-name &key (quality 1) (level 1))
-  (and (%try-asdf-system system)
-       (find-package package)
-       (handler-case
-           (let* ((raw (make-array 4 :element-type '(unsigned-byte 8)
-                                   :initial-contents '(1 2 3 4)))
-                  (compress (find-symbol compress-name package))
-                  (decompress (find-symbol decompress-name package))
-                  (enc (if (eq package :cl-stack-brotli)
-                           (funcall compress raw :quality quality)
-                           (funcall compress raw :level level)))
-                  (dec (funcall decompress enc)))
-             (equalp raw dec))
-         (error () nil))))
+(defun %probe-coding (coding)
+  "True if backend for CODING is loadable and round-trips 4 bytes."
+  (let* ((c (normalize-content-coding coding))
+         (sys (cdr (assoc c *content-coding-systems*))))
+    (and sys
+         (%try-asdf-system sys)
+         (handler-case
+             (let* ((raw (make-array 4 :element-type '(unsigned-byte 8)
+                                     :initial-contents '(1 2 3 4)))
+                    (enc (encode-content-coding c raw))
+                    (dec (decode-content-coding c enc)))
+               (equalp raw dec))
+           (error () nil)))))
 
-(defun %brotli-available-p ()
-  (when (eq *brotli-available* :unknown)
-    (setf *brotli-available*
-          (%probe-overlay "cl-stack-brotli" :cl-stack-brotli "COMPRESS" "DECOMPRESS"
-                          :quality 1)))
-  *brotli-available*)
-
-(defun %zstd-available-p ()
-  (when (eq *zstd-available* :unknown)
-    (setf *zstd-available*
-          (%probe-overlay "cl-stack-zstd" :cl-stack-zstd "COMPRESS" "DECOMPRESS"
-                          :level 1)))
-  *zstd-available*)
+(defun %coding-available-p (coding)
+  (let* ((c (normalize-content-coding coding))
+         (cached (gethash c *coding-availability* :unknown)))
+    (when (eq cached :unknown)
+      (setf cached (%probe-coding c)
+            (gethash c *coding-availability*) cached))
+    cached))
 
 (defun %warn-missing (coding)
   (unless (member coding *warned-missing-overlays*)
     (push coding *warned-missing-overlays*)
-    (warn "Content-Encoding ~S unavailable (overlay not loaded); omitting from Accept-Encoding"
-          coding)))
+    (warn "Content-Encoding ~S unavailable (backend ~S not loaded); omitting from Accept-Encoding"
+          coding
+          (cdr (assoc coding *content-coding-systems*)))))
 
 (defun content-coding-supported-p (coding)
   "True if we can decode (and encode) CODING."
   (let ((c (normalize-content-coding coding)))
     (case c
-      ((:gzip :deflate :identity) t)
-      (:br (%brotli-available-p))
-      (:zstd (%zstd-available-p))
+      (:identity t)
+      ((:gzip :deflate :br :zstd) (%coding-available-p c))
       (otherwise nil))))
 
 (defun available-content-codings (&key (warn t))
   "Codings we can decode, preference order for Accept-Encoding."
-  (let ((out '(:gzip :deflate)))
-    (if (%brotli-available-p)
-        (setf out (append out '(:br)))
-        (when warn (%warn-missing :br)))
-    (if (%zstd-available-p)
-        (setf out (append out '(:zstd)))
-        (when warn (%warn-missing :zstd)))
+  (let ((out '()))
+    (dolist (c '(:gzip :deflate :br :zstd))
+      (if (content-coding-supported-p c)
+          (setf out (nconc out (list c)))
+          (when warn (%warn-missing c))))
     out))
 
 (defun default-accept-encoding (&key (as :string))
-  "Default Accept-Encoding tokens for supported codings.
+  "Default Accept-Encoding from available backends.
    AS :string → header value; :list → keyword list."
   (let ((codings (available-content-codings :warn t)))
     (ecase as
@@ -136,97 +142,72 @@
        (format nil "~{~(~A~)~^,~}" codings)))))
 
 (defgeneric decode-content-coding (coding input &key)
-  (:documentation "Decode HTTP Content-Encoding CODING over INPUT (octets). → octet vector."))
+  (:documentation
+   "Decode HTTP Content-Encoding CODING over INPUT.
+    Octets → octet vector; binary input stream → decompressing stream.
+    Backends specialize on coding keywords."))
 
 (defgeneric encode-content-coding (coding input &key level quality)
-  (:documentation "Encode INPUT octets with HTTP Content-Encoding CODING. → octet vector."))
+  (:documentation
+   "Encode INPUT with HTTP Content-Encoding CODING.
+    Octets → octet vector; binary input stream → encoding stream.
+    Backends specialize on coding keywords."))
 
 (defmethod decode-content-coding :around (coding input &key)
   (let ((c (normalize-content-coding coding)))
-    (if c
-        (call-next-method c input)
-        (%octet-vector input))))
+    (cond ((null c)
+           (if (streamp input) input (%octet-vector input)))
+          (t (call-next-method c input)))))
 
 (defmethod encode-content-coding :around (coding input &key level quality)
   (let ((c (normalize-content-coding coding)))
-    (if c
-        (call-next-method c input :level level :quality quality)
-        (%octet-vector input))))
+    (cond ((null c)
+           (if (streamp input) input (%octet-vector input)))
+          (t (call-next-method c input :level level :quality quality)))))
 
 (defmethod decode-content-coding ((coding (eql :identity)) input &key)
-  (%octet-vector input))
+  (if (streamp input) input (%octet-vector input)))
 
 (defmethod encode-content-coding ((coding (eql :identity)) input &key level quality)
   (declare (ignore level quality))
-  (%octet-vector input))
-
-(defmethod decode-content-coding ((coding (eql :gzip)) input &key)
-  (chipz:decompress nil 'chipz:gzip (%octet-vector input)))
-
-(defmethod encode-content-coding ((coding (eql :gzip)) input &key level quality)
-  (declare (ignore level quality))
-  (salza2:compress-data (%octet-vector input) 'salza2:gzip-compressor))
-
-;;; HTTP "deflate" is zlib-wrapped in practice (browsers / httpx).
-(defmethod decode-content-coding ((coding (eql :deflate)) input &key)
-  (let ((octets (%octet-vector input)))
-    (handler-case
-        (chipz:decompress nil 'chipz:zlib octets)
-      (error ()
-        (chipz:decompress nil 'chipz:deflate octets)))))
-
-(defmethod encode-content-coding ((coding (eql :deflate)) input &key level quality)
-  (declare (ignore level quality))
-  (salza2:compress-data (%octet-vector input) 'salza2:zlib-compressor))
-
-(defmethod decode-content-coding ((coding (eql :br)) input &key)
-  (unless (content-coding-supported-p :br)
-    (error 'unsupported-content-coding :coding :br
-           :message "cl-stack-brotli overlay not available"))
-  (funcall (find-symbol "DECOMPRESS" :cl-stack-brotli) (%octet-vector input)))
-
-(defmethod encode-content-coding ((coding (eql :br)) input &key level quality)
-  (declare (ignore level))
-  (unless (content-coding-supported-p :br)
-    (error 'unsupported-content-coding :coding :br
-           :message "cl-stack-brotli overlay not available"))
-  (funcall (find-symbol "COMPRESS" :cl-stack-brotli)
-           (%octet-vector input)
-           :quality (or quality 5)))
-
-(defmethod decode-content-coding ((coding (eql :zstd)) input &key)
-  (unless (content-coding-supported-p :zstd)
-    (error 'unsupported-content-coding :coding :zstd
-           :message "cl-stack-zstd overlay not available"))
-  (funcall (find-symbol "DECOMPRESS" :cl-stack-zstd) (%octet-vector input)))
-
-(defmethod encode-content-coding ((coding (eql :zstd)) input &key level quality)
-  (declare (ignore quality))
-  (unless (content-coding-supported-p :zstd)
-    (error 'unsupported-content-coding :coding :zstd
-           :message "cl-stack-zstd overlay not available"))
-  (funcall (find-symbol "COMPRESS" :cl-stack-zstd)
-           (%octet-vector input)
-           :level (or level 3)))
+  (if (streamp input) input (%octet-vector input)))
 
 (defmethod decode-content-coding (coding input &key)
   (declare (ignore input))
-  (error 'unsupported-content-coding :coding coding))
+  (error 'unsupported-content-coding :coding coding
+         :message (format nil "no backend loaded for ~S (expected system ~S)"
+                          coding
+                          (cdr (assoc (normalize-content-coding coding)
+                                      *content-coding-systems*)))))
 
 (defmethod encode-content-coding (coding input &key level quality)
   (declare (ignore input level quality))
-  (error 'unsupported-content-coding :coding coding))
+  (error 'unsupported-content-coding :coding coding
+         :message (format nil "no backend loaded for ~S (expected system ~S)"
+                          coding
+                          (cdr (assoc (normalize-content-coding coding)
+                                      *content-coding-systems*)))))
+
+(defun make-decoding-stream (coding source)
+  "Binary input stream decoding CODING from SOURCE (delegates to DECODE-CONTENT-CODING)."
+  (check-type source stream)
+  (decode-content-coding coding source))
+
+(defun make-encoding-stream (coding source &key level quality)
+  "Binary input stream encoding SOURCE with CODING (delegates to ENCODE-CONTENT-CODING)."
+  (check-type source stream)
+  (encode-content-coding coding source :level level :quality quality))
 
 (defun decode-content-codings (codings input)
   "Apply CODINGS in reverse (wire order is outer-first)."
-  (reduce (lambda (octets coding)
-            (decode-content-coding coding octets))
+  (reduce (lambda (acc coding)
+            (decode-content-coding coding acc))
           (reverse codings)
-          :initial-value (%octet-vector input)))
+          :initial-value (if (streamp input) input (%octet-vector input))))
 
 (defun encode-content-codings (codings input &rest keys &key &allow-other-keys)
   "Apply CODINGS left-to-right (first coding is outermost on the wire)."
-  (reduce (lambda (octets coding)
-            (apply #'encode-content-coding coding octets keys))
+  (reduce (lambda (acc coding)
+            (apply #'encode-content-coding coding acc keys))
           codings
-          :initial-value (%octet-vector input)))
+          :initial-value (if (streamp input) input (%octet-vector input))))

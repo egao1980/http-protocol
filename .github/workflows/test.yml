@@ -65,8 +65,7 @@ jobs:
         shell: bash
         run: |
           ros install rove
-          ros install chipz
-          ros install salza2
+          ros install trivial-gray-streams
 
       - name: Test http-protocol (Unix)
         if: runner.os != 'Windows'

@@ -2,19 +2,20 @@
 
 MIT. CLOS **HTTP client protocol** for [cl-stack](https://github.com/egao1980/cl-stack).
 
-Wave-1 starts with **Content-Encoding** (`decode-content-coding` /
-`encode-content-coding`). Sync/async backends and the `http` facade follow.
+Wave-1 starts with **Content-Encoding** generics. Sync/async backends and the `http` facade follow.
 
-| Concern | Pin |
-|---------|-----|
-| gzip / deflate | **chipz** + **salza2** |
-| br | optional [`cl-stack-brotli`](https://github.com/egao1980/cl-stack-brotli) |
-| zstd | optional [`cl-stack-zstd`](https://github.com/egao1980/cl-stack-zstd) |
-| MIME / CTE | [`cl-mime`](https://github.com/egao1980/cl-mime) (later; not this module) |
+| Layer | Repo |
+|-------|------|
+| Protocol (this) | generics, parse, Accept-Encoding probe, conformance |
+| gzip / deflate | [`http-encoding-chipz`](https://github.com/egao1980/http-encoding-chipz) |
+| br | [`http-encoding-brotli`](https://github.com/egao1980/http-encoding-brotli) → [`cl-stack-brotli`](https://github.com/egao1980/cl-stack-brotli) |
+| zstd | [`http-encoding-zstd`](https://github.com/egao1980/http-encoding-zstd) → [`cl-stack-zstd`](https://github.com/egao1980/cl-stack-zstd) |
 
-**Brief:** [cl-stack `docs/capabilities/http-protocol.md`](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/http-protocol.md)
+Same shape as `event-protocol` / `event-backend-*`: **no plugin registry** — load the ASDF system; methods appear. Soft-load probes `*content-coding-systems*` for `default-accept-encoding`.
 
 `mime:decode-content` / `encode-content` are Content-Transfer-Encoding — different API.
+
+**Brief:** [cl-stack `docs/capabilities/http-protocol.md`](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/http-protocol.md)
 
 ## Load / test
 
@@ -23,14 +24,18 @@ qlot install
 qlot exec ros -S . -e '(asdf:test-system "http-protocol")'
 ```
 
-Without qlot (Quicklisp + source registry):
+Conformance (from a backend test system):
 
-```bash
-sbcl --eval '(asdf:load-asd "http-protocol.asd")' \
-     --eval '(asdf:test-system "http-protocol")'
+```lisp
+(http-protocol/conformance:run-for-codings '(:gzip :deflate))
 ```
 
-`default-accept-encoding` omits `br`/`zstd` when overlays are missing (warns once).
+## Adding an encoding backend
+
+1. New repo `http-encoding-<impl>` depending on `http-protocol` (+ natives as needed).
+2. Specialize `decode-content-coding` / `encode-content-coding` on coding keywords (octets + stream).
+3. Add the coding → system entry to `*content-coding-systems*` in this repo (PR).
+4. `/tests` calls `http-protocol/conformance:run-for-codings` with the codings you implement.
 
 ## Tracking
 

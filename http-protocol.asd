@@ -1,13 +1,14 @@
 (defsystem "http-protocol"
   :version "0.1.0"
-  :description "CLOS HTTP client protocol for cl-stack (Content-Encoding first)"
+  :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding protocol)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("chipz" "salza2")
+  :depends-on ("trivial-gray-streams")
   :serial t
   :pathname "src"
   :components ((:file "package")
                (:file "conditions")
+               (:file "octet-stream")
                (:file "content-encoding"))
   :in-order-to ((test-op (test-op "http-protocol/tests"))))
 
@@ -16,7 +17,16 @@
   :pathname "tests"
   :serial t
   :components ((:file "package")
-               (:file "content-encoding-test"))
+               (:file "protocol-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)
                (error "tests failed for ~A" (component-name c)))))
+
+;;; Shared encoding suite — backends set *TEST-CODINGS* then (rove:run this).
+(defsystem "http-protocol/conformance"
+  :description "Content-Encoding backend conformance suite (Rove)"
+  :depends-on ("http-protocol" "rove")
+  :pathname "tests/conformance"
+  :serial t
+  :components ((:file "package")
+               (:file "suite")))

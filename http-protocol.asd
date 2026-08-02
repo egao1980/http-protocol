@@ -3,7 +3,7 @@
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("trivial-gray-streams")
+  :depends-on ("trivial-gray-streams" "blackbird")
   :serial t
   :pathname "src"
   :components ((:file "package")

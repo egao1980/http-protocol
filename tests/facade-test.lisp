@@ -28,3 +28,30 @@
                             :headers (make-hash-table :test #'equal)
                             :body #())))
     (ok (signals (raise-for-status res) 'http-client-error))))
+
+(defclass mock-async-backend (http-backend)
+  ()
+  (:default-initargs :name "mock-async"))
+
+(defmethod send-async ((backend mock-async-backend) client request
+                       &key callback error-callback)
+  (declare (ignore client error-callback))
+  (when callback
+    (funcall callback
+             (make-instance 'http-response
+                            :status 200
+                            :headers (make-hash-table :test #'equal)
+                            :body (coerce-to-octets "async-ok")
+                            :url (http-request-url request)
+                            :request request)))
+  :mock-handle)
+
+(deftest facade-get-async
+  (let ((*http-backend* (make-instance 'mock-async-backend))
+        (seen nil))
+    (blackbird:attach
+     (get-async "https://example.com/a")
+     (lambda (res) (setf seen res)))
+    (ok (not (null seen)))
+    (ok (= 200 (response-status seen)))
+    (ok (equalp (coerce-to-octets "async-ok") (response-body seen)))))

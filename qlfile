@@ -1,6 +1,2 @@
 ql rove
-ql chipz
-ql salza2
-# Optional overlays — tests skip br/zstd if natives unavailable
-github egao1980/cl-stack-brotli
-github egao1980/cl-stack-zstd
+ql trivial-gray-streams

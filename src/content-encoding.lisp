@@ -20,7 +20,7 @@
 
 (defvar *warned-missing-overlays* nil)
 (defvar *coding-availability* (make-hash-table :test #'eq)
-  "Cache: coding → T / NIL / :unknown")
+  "Cache successful coding availability probes: coding → T.")
 
 (defun normalize-content-coding (coding)
   "Return a keyword coding (:gzip :deflate :br :zstd :identity) or NIL if blank."
@@ -101,12 +101,12 @@
            (error () nil)))))
 
 (defun %coding-available-p (coding)
-  (let* ((c (normalize-content-coding coding))
-         (cached (gethash c *coding-availability* :unknown)))
-    (when (eq cached :unknown)
-      (setf cached (%probe-coding c)
-            (gethash c *coding-availability*) cached))
-    cached))
+  (let* ((c (normalize-content-coding coding)))
+    (or (gethash c *coding-availability*)
+        (let ((result (%probe-coding c)))
+          (when result
+            (setf (gethash c *coding-availability*) t))
+          result))))
 
 (defun %warn-missing (coding)
   (unless (member coding *warned-missing-overlays*)

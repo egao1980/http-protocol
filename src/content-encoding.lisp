@@ -71,16 +71,22 @@
 ;; Back-compat internal name used by around methods.
 (defun %octet-vector (input) (coerce-to-octets input))
 
+(defun %nested-asdf-operate-p ()
+  "True when ASDF is mid-OPERATE (soft-load must not nest)."
+  (let* ((session-sym (find-symbol "*ASDF-SESSION*" :asdf))
+         (session (and session-sym (boundp session-sym) (symbol-value session-sym)))
+         (visiting-sym (or (find-symbol "SESSION-VISITING-ACTION-SET" :asdf)
+                           (find-symbol "SESSION-VISITING-ACTION-SET" :asdf/session))))
+    (and session visiting-sym (fboundp visiting-sym)
+         (let ((table (ignore-errors (funcall visiting-sym session))))
+           (and (hash-table-p table) (plusp (hash-table-count table)))))))
+
 (defun %try-asdf-system (name)
   "Load NAME if present. Skips nested ASDF OPERATE during TEST-OP."
   (let ((sys (asdf:find-system name nil)))
     (cond ((null sys) nil)
           ((asdf:component-loaded-p sys) t)
-          ((and (boundp 'asdf::*asdf-session*)
-                asdf::*asdf-session*
-                (plusp (hash-table-count
-                        (asdf::session-visiting-action-set asdf::*asdf-session*))))
-           nil)
+          ((%nested-asdf-operate-p) nil)
           (t
            (handler-case
                (progn (asdf:load-system sys) t)

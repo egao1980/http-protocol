@@ -46,8 +46,9 @@
                        :accessor proxy-config-system-automatic-p
                        :initform nil
                        :documentation
-                       "When T and no static PROXY/script hit, RESOLVE-PROXY → :SYSTEM
-                        (backend uses OS resolution — WinHTTP AUTOMATIC).")
+                       "WinHTTP-only (dexador): when T and RESOLVE-PROXY is NIL,
+                        the WinHTTP backend opens with AUTOMATIC_PROXY (registry/PAC/WPAD).
+                        Usocket/async backends ignore this — NIL means direct.")
    (script-url :initarg :script-url :accessor proxy-config-script-url :initform nil
                :documentation "Manual PAC URL (CONFIGURE-PROXY-SCRIPT), not system WPAD.")
    (script-text :initarg :script-text :accessor proxy-config-script-text :initform nil
@@ -55,7 +56,8 @@
   (:documentation
    "Proxy policy (urllib3/requests: one proxy per request, no multi-hop chains).
     Populate via CONFIGURE-PROXY / CONFIGURE-PROXY-SCRIPT / LOAD-PROXY-SYSTEM;
-    resolve with RESOLVE-PROXY / PROXY-NEXT-HOP (methods on this class)."))
+    resolve with RESOLVE-PROXY / PROXY-NEXT-HOP → URL or NIL.
+    OS automatic (PAC/WPAD) is not resolved here — WinHTTP honors SYSTEM-AUTOMATIC-P."))
 
 (defun http-proxy-config-p (x) (typep x 'http-proxy-config))
 
@@ -391,28 +393,28 @@
            :operation 'evaluate-proxy-script
            :message "PAC evaluation not implemented; use system automatic proxy or a static proxy")))
 
-(defgeneric resolve-system-proxy-platform (config uri)
-  (:documentation
-   "Platform residual after env for SYSTEM discovery → URL | NIL | :SYSTEM.
-    Default NIL (direct). Windows: :SYSTEM when PAC/WPAD/WinHTTP AUTOMATIC.")
-  (:method ((config http-proxy-config) uri)
-    (declare (ignore config uri))
-    nil))
-
 (defun resolve-system-proxy (config uri)
-  "System discovery for URI (dexador#202 precedence):
-     1. environment (http(s)_proxy / all_proxy / no_proxy) — all OS
-     2. registry / PAC / WPAD — platform (may yield :SYSTEM for the backend)
-   Returns proxy URL string, NIL (direct), or :SYSTEM."
+  "Live environment proxy for URI (dexador#202). URL string or NIL.
+   Does not resolve PAC/WPAD — that stays on the WinHTTP backend via
+   SYSTEM-AUTOMATIC-P + USE-OS-AUTOMATIC-PROXY-P."
   (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
          (host (quri:uri-host u))
          (scheme (quri:uri-scheme u))
-         ;; Env NO_PROXY applies even when config snapshot omitted it.
          (no (or (proxy-config-no-proxy config) (environment-no-proxy))))
     (when (host-bypassed-p host no)
       (return-from resolve-system-proxy nil))
-    (or (select-proxy scheme host (environment-proxy-alist))
-        (resolve-system-proxy-platform config u))))
+    (select-proxy scheme host (environment-proxy-alist))))
+
+(defun use-os-automatic-proxy-p (config uri &optional resolved-proxy)
+  "True when a WinHTTP backend should use AUTOMATIC_PROXY (dexador).
+   RESOLVED-PROXY is the RESOLVE-PROXY result (URL or NIL). Usocket/async: ignore."
+  (and (proxy-config-use-system-proxy config)
+       (proxy-config-system-automatic-p config)
+       (null resolved-proxy)
+       (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
+              (host (quri:uri-host u))
+              (no (or (proxy-config-no-proxy config) (environment-no-proxy))))
+         (not (host-bypassed-p host no)))))
 
 (defgeneric coerce-proxy-config (x)
   (:documentation "Normalize X → HTTP-PROXY-CONFIG.")
@@ -432,12 +434,15 @@
 
 (defgeneric resolve-proxy (config uri)
   (:documentation
-   "Method on HTTP-PROXY-CONFIG: at most one proxy for URI (requests/urllib3).
-      - string → proxy URL
-      - NIL → direct (also NO_PROXY)
-      - :SYSTEM → residual OS automatic after env (registry/PAC/WPAD); backend must honor
+   "Method on HTTP-PROXY-CONFIG: at most one proxy URL for URI, or NIL (direct).
 
-    Order: manual/config proxy → manual PAC script → system (env > registry/PAC).")
+    Order (dexador usocket shape):
+      1. manual / loaded config proxy (env snapshot, registry static)
+      2. manual PAC script text (CONFIGURE-PROXY-SCRIPT)
+      3. live environment (when USE-SYSTEM-PROXY)
+
+    Never returns :SYSTEM. PAC/WPAD automatic is WinHTTP-only — see
+    USE-OS-AUTOMATIC-PROXY-P / SYSTEM-AUTOMATIC-P.")
   (:method ((config http-proxy-config) uri)
     (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
            (host (quri:uri-host u)))
@@ -449,8 +454,7 @@
                      (proxy-config-script-url config))
             (evaluate-proxy-script config u
                                    :script (proxy-config-script-text config)))
-          (when (and (proxy-config-use-system-proxy config)
-                     (proxy-config-system-automatic-p config))
+          (when (proxy-config-use-system-proxy config)
             (resolve-system-proxy config u)))))
   (:method ((proxy string) uri)
     (resolve-proxy (coerce-proxy-config proxy) uri))
@@ -464,7 +468,7 @@
   (:documentation
    "Method on HTTP-PROXY-CONFIG: the single proxy for request SCHEME/HOST as
     (PROXY-SCHEME . PROXY-HOST). Secondary values: PORT, PROXY-URL.
-    NIL = direct. Primary :SYSTEM = OS automatic.")
+    NIL = direct (WinHTTP may still AUTOMATIC via USE-OS-AUTOMATIC-PROXY-P).")
   (:method ((config http-proxy-config) scheme host &key port uri)
     (declare (ignore port))
     (let* ((u (or (and uri (if (typep uri 'quri:uri) uri (quri:uri uri)))
@@ -478,22 +482,13 @@
                         (or (select-proxy
                              scheme host
                              (normalize-proxy (proxy-config-proxy config)))
-                            (when (and (proxy-config-use-system-proxy config)
-                                       (proxy-config-system-automatic-p config))
-                              ;; env > registry/PAC (same as RESOLVE-SYSTEM-PROXY)
-                              (or (select-proxy scheme host
-                                                (environment-proxy-alist))
-                                  (resolve-system-proxy-platform
-                                   config
-                                   (quri:make-uri :scheme scheme :host host
-                                                  :path "/")))))))))
-      (cond
-        ((null proxy) nil)
-        ((eq proxy :system) (values :system nil nil))
-        (t
-         (multiple-value-bind (pscheme phost pport)
-             (parse-proxy-uri proxy)
-           (values (cons pscheme phost) pport proxy)))))))
+                            (when (proxy-config-use-system-proxy config)
+                              (select-proxy scheme host
+                                            (environment-proxy-alist))))))))
+      (when proxy
+        (multiple-value-bind (pscheme phost pport)
+            (parse-proxy-uri proxy)
+          (values (cons pscheme phost) pport proxy))))))
 
 (defun effective-proxy-config (request client)
   "Request :PROXY overrides client; else ENSURE-DEFAULT-PROXY-CONFIG.
@@ -517,9 +512,8 @@
   (member (normalize-proxy-scheme scheme) '("http" "https") :test #'string=))
 
 (defun proxy-kind (proxy-url)
-  "Classify PROXY-URL → :HTTP | :SOCKS5 | :SOCKS4 | :SYSTEM | NIL."
+  "Classify PROXY-URL → :HTTP | :SOCKS5 | :SOCKS4 | NIL."
   (cond
-    ((eq proxy-url :system) :system)
     ((null proxy-url) nil)
     (t
      (let ((s (normalize-proxy-scheme

@@ -142,22 +142,23 @@
       (ok (string= "http://explicit:9"
                    (resolve-proxy cfg "http://example.com/"))))))
 
-(deftest resolve-proxy-system-automatic
-  "SYSTEM path: env > registry/PAC. Empty env → platform (:SYSTEM on Windows)."
+(deftest resolve-proxy-never-returns-system
+  "RESOLVE-PROXY → URL|NIL only. SYSTEM-AUTOMATIC-P is WinHTTP policy, not a URL."
   (let ((cfg (make-http-proxy-config :system nil
-                                     :system-automatic-p t)))
+                                     :system-automatic-p t
+                                     :proxy nil)))
     (with-env (("https_proxy" nil) ("HTTPS_PROXY" nil)
                ("http_proxy" nil) ("HTTP_PROXY" nil)
                ("all_proxy" nil) ("ALL_PROXY" nil)
                ("no_proxy" nil) ("NO_PROXY" nil))
-      (let ((got (resolve-proxy cfg "http://example.com/")))
-        ;; Unix: NIL (direct). Windows: :SYSTEM for WinHTTP AUTOMATIC.
-        (ok (member got '(nil :system))))
+      (ok (null (resolve-proxy cfg "http://example.com/")))
+      (ok (use-os-automatic-proxy-p cfg "http://example.com/" nil))
       (setf (proxy-config-no-proxy cfg) "example.com")
-      (ok (null (resolve-proxy cfg "http://example.com/"))))))
+      (ok (null (resolve-proxy cfg "http://example.com/")))
+      (ok (not (use-os-automatic-proxy-p cfg "http://example.com/" nil))))))
 
-(deftest resolve-system-env-overrides-platform
-  "Live env wins over SYSTEM-AUTOMATIC-P / registry residual."
+(deftest resolve-system-env-live
+  "Live env via USE-SYSTEM-PROXY (usocket/async path)."
   (let ((cfg (make-http-proxy-config :system nil
                                      :system-automatic-p t
                                      :proxy nil)))
@@ -169,8 +170,11 @@
       (ok (string= "http://env-wins:8080"
                    (resolve-proxy cfg "http://example.com/")))
       (ok (string= "http://env-wins:8080"
-                   (resolve-system-proxy cfg "http://example.com/"))))))
-
+                   (resolve-system-proxy cfg "http://example.com/")))
+      ;; Concrete URL ⇒ WinHTTP must not AUTOMATIC
+      (ok (not (use-os-automatic-proxy-p
+                cfg "http://example.com/"
+                (resolve-proxy cfg "http://example.com/")))))))
 (deftest parse-windows-proxy-server-forms
   (ok (equal '(("*" . "http://127.0.0.1:3128"))
              (parse-windows-proxy-server "127.0.0.1:3128")))

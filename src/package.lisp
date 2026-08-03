@@ -163,7 +163,6 @@
            #:*default-proxy-config*
            #:ensure-default-proxy-config
            #:load-proxy-environment
-           #:load-proxy-command-line
            #:load-proxy-system
            #:load-proxy-script
            #:evaluate-proxy-script

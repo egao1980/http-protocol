@@ -84,16 +84,9 @@
                    (resolve-proxy cfg "https://example.com/")))
       (ok (null (resolve-proxy cfg "http://localhost/"))))))
 
-(deftest load-proxy-command-line-method
-  (let ((cfg (make-http-proxy-config :from-environment nil)))
-    (load-proxy-command-line
-     cfg
-     '("prog" "--proxy" "http://cli:3128" "--noproxy" "127.0.0.1,.local"))
-    (ok (string= "http://cli:3128" (resolve-proxy cfg "http://example.com/")))
-    (ok (null (resolve-proxy cfg "http://127.0.0.1/")))))
-
-(deftest load-proxy-cli-overrides-environment
-  (let ((cfg (make-http-proxy-config :from-environment nil)))
+(deftest programmatic-proxy-not-clobbered-by-environment
+  (let ((cfg (make-http-proxy-config :from-environment nil
+                                     :proxy "http://explicit:9")))
     (with-env (("http_proxy" "http://env:1")
                ("HTTP_PROXY" nil)
                ("https_proxy" nil)
@@ -102,9 +95,9 @@
                ("ALL_PROXY" nil)
                ("no_proxy" nil)
                ("NO_PROXY" nil))
-      (load-proxy cfg :command-line t :argv '("-x" "http://cli:2")
-                      :environment t :system nil)
-      (ok (string= "http://cli:2" (resolve-proxy cfg "http://example.com/"))))))
+      (load-proxy cfg :environment t :system nil)
+      (ok (string= "http://explicit:9"
+                   (resolve-proxy cfg "http://example.com/"))))))
 
 (deftest resolve-proxy-system-automatic
   (let ((cfg (make-http-proxy-config :from-environment nil

@@ -247,33 +247,6 @@
           (proxy-config-no-proxy config) (environment-no-proxy))
     config))
 
-(defgeneric load-proxy-command-line (config argv &key)
-  (:documentation
-   "Parse ARGV for curl-like flags: --proxy/-x URL, --noproxy/--no-proxy LIST.
-    Mutates CONFIG; returns CONFIG.")
-  (:method ((config http-proxy-config) argv &key)
-    (let ((args (coerce argv 'list)))
-      (loop for rest on args
-            for arg = (car rest)
-            do (cond
-                 ((member arg '("--proxy" "-x") :test #'string=)
-                  (let ((url (cadr rest)))
-                    (when url
-                      (setf (proxy-config-proxy config) url)
-                      (setf rest (cdr rest)))))
-                 ((member arg '("--noproxy" "--no-proxy") :test #'string=)
-                  (let ((list (cadr rest)))
-                    (when list
-                      (setf (proxy-config-no-proxy config) list)
-                      (setf rest (cdr rest)))))
-                 ((and (stringp arg) (string= arg "--proxy=" :end1 (min (length arg) 8)))
-                  (setf (proxy-config-proxy config) (subseq arg 8)))
-                 ((and (stringp arg) (string= arg "--noproxy=" :end1 (min (length arg) 10)))
-                  (setf (proxy-config-no-proxy config) (subseq arg 10)))
-                 ((and (stringp arg) (string= arg "--no-proxy=" :end1 (min (length arg) 11)))
-                  (setf (proxy-config-no-proxy config) (subseq arg 11)))))
-      config)))
-
 (defgeneric load-proxy-system (config &key)
   (:documentation
    "OS / registry / WinINet automatic proxy (PAC + WPAD on Windows).
@@ -325,30 +298,22 @@
            :operation 'evaluate-proxy-script
            :message "PAC evaluation not implemented; use system automatic proxy or a static proxy")))
 
-(defgeneric load-proxy (config &key environment command-line system argv
-                                 script script-url fetch)
+(defgeneric load-proxy (config &key environment system script script-url fetch)
   (:documentation
    "Compose discovery sources onto CONFIG (mutates, returns CONFIG).
 
-    Default order (later does not override an already-set PROXY unless that
-    source is the only one requested):
-      1. command-line (ARGV)
-      2. environment (unix-like vars)
-      3. system (registry / WinINet automatic)
-      4. script (PAC fetch via :FETCH)
+    Order:
+      1. environment (unix-like vars) — skipped if PROXY already set
+      2. system (registry / WinINet automatic)
+      3. script (PAC fetch via :FETCH)
 
-    Typical process startup:
+    Programmatic proxy: set PROXY-CONFIG-PROXY / :PROXY on the client — no
+    separate loader. Typical startup:
       (load-proxy (make-http-proxy-config :from-environment nil)
-                  :environment t :system t)
-    CLI tool:
-      (load-proxy cfg :command-line t :argv sb-ext:*posix-argv* :environment t)")
+                  :environment t :system t)")
   (:method ((config http-proxy-config)
-            &key (environment t) command-line system argv
-              script script-url fetch)
-    (when (and command-line argv)
-      (load-proxy-command-line config argv))
+            &key (environment t) system script script-url fetch)
     (when environment
-      ;; Env fills gaps only — do not clobber CLI proxy.
       (let ((had-proxy (proxy-config-proxy config))
             (had-no (proxy-config-no-proxy config)))
         (load-proxy-environment config)

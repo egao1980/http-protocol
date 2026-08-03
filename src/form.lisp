@@ -1,7 +1,7 @@
 (in-package #:http-protocol)
 
-;;; HTML-form interop (not HTTP core RFC): query :params + urlencoded :data.
-;;; Multipart stays in multipart.lisp.
+;;; HTML-form interop (not HTTP core RFC): query :params + urlencoded :form-data.
+;;; Typed :data (de)serdes lives in serdes.lisp; multipart in multipart.lisp.
 
 (defun %form-field-name (name)
   (ctypecase name

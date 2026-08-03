@@ -6,16 +6,18 @@
 (defun request (method url &rest keys
                 &key (backend http-protocol:*http-backend*)
                   (client nil clientp)
-                  headers content data files params timeout max-redirects cookies
+                  headers content data data-type form-data files params
+                  timeout max-redirects cookies
                   auth range
                   accept-encoding content-encoding
                   (decompress t) (force-binary t) want-stream
                   raise-for-status
                 &allow-other-keys)
   "Sync HTTP request. Uses *HTTP-BACKEND* / *HTTP-CLIENT* when not supplied.
-   :PARAMS → query (quri); :DATA alist → urlencoded; :DATA+:FILES/:FILES → multipart;
-   :CONTENT → raw body."
-  (declare (ignore headers content data files params timeout max-redirects cookies
+   :PARAMS → query; :FORM-DATA → urlencoded; :FORM-DATA+:FILES/:FILES → multipart;
+   :DATA + :DATA-TYPE → ENCODE-HTTP-DATA; :CONTENT → raw body."
+  (declare (ignore headers content data data-type form-data files params
+                   timeout max-redirects cookies
                    auth range
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
@@ -59,14 +61,16 @@
 (defun request-async (method url &rest keys
                       &key (backend http-protocol:*http-backend*)
                         (client nil clientp)
-                        headers content data files params timeout max-redirects cookies
+                        headers content data data-type form-data files params
+                        timeout max-redirects cookies
                         auth range
                         accept-encoding content-encoding
                         (decompress t) (force-binary t) want-stream
                         raise-for-status
                       &allow-other-keys)
   "Async HTTP request → Blackbird promise of HTTP-RESPONSE."
-  (declare (ignore headers content data files params timeout max-redirects cookies
+  (declare (ignore headers content data data-type form-data files params
+                   timeout max-redirects cookies
                    auth range
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))

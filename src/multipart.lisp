@@ -254,41 +254,58 @@
     (values stream ct clen boundary)))
 
 (defun prepare-request-body (request &key (buffer-size *http-stream-buffer-size*))
-  "Resolve CONTENT / DATA / FILES → wire body for a backend.
+  "Resolve CONTENT / DATA / FORM-DATA / FILES → wire body for a backend.
 
    Returns (values wire-content extra-header-alist content-length-or-nil).
-   Wire content is a stream, octet vector, or NIL.
 
-   Body rules (requests/httpx-shaped):
-   - :FILES (with optional :DATA) → multipart/form-data
-   - :DATA alone (alist) → application/x-www-form-urlencoded
-   - :CONTENT → raw body (octets/string/stream/http-file)"
+   Body rules:
+   - :FILES (optional :FORM-DATA) → multipart/form-data
+   - :FORM-DATA alone → application/x-www-form-urlencoded
+   - :DATA → ENCODE-HTTP-DATA (:DATA-TYPE + Content-Type header if set)
+   - :CONTENT → raw body
+
+   :CONTENT, :DATA, and :FORM-DATA/:FILES are mutually exclusive."
   (declare (ignore buffer-size))
   (let ((content (http-request-content request))
         (data (http-request-data request))
+        (form-data (http-request-form-data request))
         (files (http-request-files request))
         (coding (http-request-content-encoding request)))
-    (when (and content (or data files))
+    (when (> (count-if #'identity
+                       (list (not (null content))
+                             (not (null data))
+                             (or form-data files)))
+             1)
       (error 'http-protocol-error
-             :message "specify either :content or :data/:files, not both"))
+             :message "specify only one of :content, :data, or :form-data/:files"))
     (cond
       (files
        (multiple-value-bind (stream ct clen)
-           (make-multipart-body data files)
+           (make-multipart-body form-data files)
          (values stream (list (cons "content-type" ct)) clen)))
-      (data
-       (let ((octets (etypecase data
-                       (list (encode-urlencoded data))
-                       (string (babel:string-to-octets data :encoding :utf-8))
-                       ((vector (unsigned-byte 8)) data))))
+      (form-data
+       (let ((octets (etypecase form-data
+                       (list (encode-urlencoded form-data))
+                       (string (babel:string-to-octets form-data :encoding :utf-8))
+                       ((vector (unsigned-byte 8)) form-data))))
          (multiple-value-bind (wire ce)
              (prepare-request-content octets :coding coding)
            (let ((extra (list (cons "content-type"
                                     "application/x-www-form-urlencoded"))))
              (when ce (setf extra (acons "content-encoding" ce extra)))
              (values wire extra (when (vectorp wire) (length wire)))))))
+      (data
+       (multiple-value-bind (wire ct clen)
+           (encode-http-data data
+                             (http-request-data-type request)
+                             (request-header-content-type request))
+         (multiple-value-bind (wire* ce)
+             (prepare-request-content wire :coding coding)
+           (let ((extra (when ct (list (cons "content-type" ct)))))
+             (when ce (setf extra (acons "content-encoding" ce extra)))
+             (values wire* extra
+                     (or clen (when (vectorp wire*) (length wire*))))))))
       ((http-file-p content)
-       ;; Single-file body (e.g. PUT): stream content; optional length/type.
        (multiple-value-bind (wire ce)
            (prepare-request-content content :coding coding)
          (let ((extra (when ce (list (cons "content-encoding" ce))))

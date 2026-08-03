@@ -123,6 +123,16 @@
   "CONNECT tunnel request (expert / proxy). Backend may signal unsupported-operation."
   (apply #'request :connect url keys))
 
+(defun stream (method url &rest keys &key &allow-other-keys)
+  "Sync request with :WANT-STREAM T. RESPONSE-BODY / BODY-STREAM is a buffered
+   binary input stream (O(buffer) memory). METHOD as in REQUEST."
+  (apply #'request method url :want-stream t keys))
+
+(defun stream-async (method url &rest keys &key &allow-other-keys)
+  "Async request with :WANT-STREAM T → promise of HTTP-RESPONSE.
+   Backends without true streaming may signal UNSUPPORTED-OPERATION."
+  (apply #'request-async method url :want-stream t keys))
+
 (defmacro with-client ((var &rest client-keys) &body body)
   "Bind VAR (and *HTTP-CLIENT*) to a fresh client for *HTTP-BACKEND*."
   `(let* ((,var (make-http-client

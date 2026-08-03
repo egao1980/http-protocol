@@ -185,9 +185,9 @@
            #:socks-remote-dns-p
            #:http-connection-pool
            #:http-connection-pool-p
-           #:lru-connection-pool
-           #:make-lru-connection-pool
            #:*default-connection-pool*
+           #:*connection-pool-constructor*
+           #:make-connection-pool
            #:ensure-default-connection-pool
            #:pool-acquire
            #:pool-release

@@ -1,12 +1,15 @@
 (in-package #:http-protocol)
 
-;;; Connection pool protocol (urllib3 PoolManager / dexador connection-cache shape).
+;;; Connection pool CLOS protocol (urllib3 PoolManager shape).
 ;;; Opaque CONNECTION objects are backend-owned (socket, TLS session, …).
-;;; Stream responses must RELEASE via POOL-RELEASE (see pooled-stream.lisp).
+;;; Concrete pools (LRU, thread-safe, …) live in backends — specialize the
+;;; generics below. Stream responses RELEASE via POOLED-BODY-STREAM.
 
 (defclass http-connection-pool ()
   ()
-  (:documentation "Protocol class for keep-alive connection reuse."))
+  (:documentation
+   "Protocol class for keep-alive connection reuse.
+    Backends subclass and implement POOL-ACQUIRE / POOL-RELEASE / …"))
 
 (defun http-connection-pool-p (x) (typep x 'http-connection-pool))
 
@@ -14,7 +17,12 @@
   (:documentation "Remove and return a pooled CONNECTION for KEY, or NIL.")
   (:method ((pool null) key)
     (declare (ignore key))
-    nil))
+    nil)
+  (:method ((pool http-connection-pool) key)
+    (declare (ignore key))
+    (error 'unsupported-operation
+           :operation 'pool-acquire
+           :message "POOL-ACQUIRE not implemented for this pool class")))
 
 (defgeneric pool-release (pool key connection &key on-evict)
   (:documentation
@@ -23,7 +31,12 @@
   (:method ((pool null) key connection &key on-evict)
     (declare (ignore key))
     (when on-evict (funcall on-evict connection))
-    nil))
+    nil)
+  (:method ((pool http-connection-pool) key connection &key on-evict)
+    (declare (ignore key connection on-evict))
+    (error 'unsupported-operation
+           :operation 'pool-release
+           :message "POOL-RELEASE not implemented for this pool class")))
 
 (defgeneric pool-discard (pool connection)
   (:documentation "Drop CONNECTION without pooling (caller should close it).")
@@ -33,7 +46,11 @@
 
 (defgeneric pool-clear (pool)
   (:documentation "Evict every entry, invoking eviction callbacks.")
-  (:method ((pool null)) nil))
+  (:method ((pool null)) nil)
+  (:method ((pool http-connection-pool))
+    (error 'unsupported-operation
+           :operation 'pool-clear
+           :message "POOL-CLEAR not implemented for this pool class")))
 
 (defgeneric connection-alive-p (connection)
   (:documentation "Backend: can CONNECTION be reused? Default T.")
@@ -50,110 +67,32 @@
         (format nil "~A|~A://~A" proxy scheme origin)
         (format nil "~A://~A" scheme origin))))
 
-;;; --- Default LRU pool (thread-safe) ---
-
-(defclass lru-pool-entry ()
-  ((prev :initform nil :accessor lru-entry-prev)
-   (next :initform nil :accessor lru-entry-next)
-   (key :initarg :key :accessor lru-entry-key)
-   (connection :initarg :connection :accessor lru-entry-connection)
-   (on-evict :initarg :on-evict :accessor lru-entry-on-evict :initform nil)))
-
-(defclass lru-connection-pool (http-connection-pool)
-  ((lock :initform (bt:make-lock "http-connection-pool") :reader lru-pool-lock)
-   (table :initform (make-hash-table :test #'equal) :reader lru-pool-table)
-   (head :initform nil :accessor lru-pool-head)
-   (tail :initform nil :accessor lru-pool-tail)
-   (count :initform 0 :accessor lru-pool-count)
-   (max-size :initarg :max-size :accessor lru-pool-max-size :initform 8))
-  (:documentation "LRU multi-map: same KEY may hold several connections."))
-
-(defun make-lru-connection-pool (&key (max-size 8))
-  (make-instance 'lru-connection-pool :max-size max-size))
-
 (defvar *default-connection-pool* nil
-  "Optional process-wide pool. Clients may share or own a private pool.")
+  "Process-wide pool instance, or NIL. Backends may set this on load.")
+
+(defvar *connection-pool-constructor* nil
+  "When non-NIL, (lambda (&key max-size)) → HTTP-CONNECTION-POOL.
+   Set by backends that ship a concrete pool.")
+
+(defun make-connection-pool (&key (max-size 8))
+  "Construct a concrete pool via *CONNECTION-POOL-CONSTRUCTOR* (backend)."
+  (unless *connection-pool-constructor*
+    (error 'unsupported-operation
+           :operation 'make-connection-pool
+           :message
+           "No pool implementation registered; load an HTTP backend or pass :POOL"))
+  (funcall *connection-pool-constructor* :max-size max-size))
 
 (defun ensure-default-connection-pool (&key (max-size 8))
+  "Return *DEFAULT-CONNECTION-POOL*, creating via MAKE-CONNECTION-POOL if needed."
   (or *default-connection-pool*
-      (setf *default-connection-pool* (make-lru-connection-pool :max-size max-size))))
-
-(defun %lru-unlink (pool entry)
-  (let ((prev (lru-entry-prev entry))
-        (next (lru-entry-next entry)))
-    (if prev
-        (setf (lru-entry-next prev) next)
-        (setf (lru-pool-head pool) next))
-    (if next
-        (setf (lru-entry-prev next) prev)
-        (setf (lru-pool-tail pool) prev)))
-  (let* ((key (lru-entry-key entry))
-         (table (lru-pool-table pool))
-         (rest (delete entry (gethash key table) :count 1)))
-    (if rest
-        (setf (gethash key table) rest)
-        (remhash key table)))
-  (decf (lru-pool-count pool))
-  entry)
-
-(defun %lru-evict-tail (pool)
-  (let ((tail (lru-pool-tail pool)))
-    (when tail
-      (%lru-unlink pool tail)
-      (values (lru-entry-connection tail) (lru-entry-on-evict tail)))))
-
-(defmethod pool-acquire ((pool lru-connection-pool) key)
-  (bt:with-lock-held ((lru-pool-lock pool))
-    (loop
-      (let ((entries (gethash key (lru-pool-table pool))))
-        (unless entries
-          (return-from pool-acquire nil))
-        (let* ((entry (car entries))
-               (conn (lru-entry-connection entry)))
-          (%lru-unlink pool entry)
-          (if (connection-alive-p conn)
-              (return-from pool-acquire conn)
-              (ignore-errors (pool-discard pool conn))))))))
-
-(defmethod pool-release ((pool lru-connection-pool) key connection &key on-evict)
-  (unless (connection-alive-p connection)
-    (pool-discard pool connection)
-    (return-from pool-release nil))
-  (let (evicted-conn evicted-cb)
-    (bt:with-lock-held ((lru-pool-lock pool))
-      (let* ((entry (make-instance 'lru-pool-entry
-                                   :key key
-                                   :connection connection
-                                   :on-evict on-evict))
-             (old-head (lru-pool-head pool))
-             (table (lru-pool-table pool)))
-        (setf (lru-entry-next entry) old-head
-              (lru-pool-head pool) entry)
-        (when old-head
-          (setf (lru-entry-prev old-head) entry))
-        (unless (lru-pool-tail pool)
-          (setf (lru-pool-tail pool) entry))
-        (push entry (gethash key table))
-        (incf (lru-pool-count pool))
-        (when (> (lru-pool-count pool) (lru-pool-max-size pool))
-          (setf (values evicted-conn evicted-cb) (%lru-evict-tail pool)))))
-    (when evicted-conn
-      (when evicted-cb
-        (ignore-errors (funcall evicted-cb evicted-conn)))
-      (ignore-errors (pool-discard pool evicted-conn)))
-    t))
-
-(defmethod pool-clear ((pool lru-connection-pool))
-  (loop
-    (multiple-value-bind (conn cb)
-        (bt:with-lock-held ((lru-pool-lock pool))
-          (%lru-evict-tail pool))
-      (unless conn (return))
-      (when cb (ignore-errors (funcall cb conn)))
-      (ignore-errors (pool-discard pool conn)))))
+      (when *connection-pool-constructor*
+        (setf *default-connection-pool*
+              (make-connection-pool :max-size max-size)))))
 
 (defun coerce-connection-pool (x &key (max-size 8))
-  "T → default shared pool; HTTP-CONNECTION-POOL → itself; NIL → no pooling."
+  "HTTP-CONNECTION-POOL → itself; T → ENSURE-DEFAULT-CONNECTION-POOL (may be NIL);
+   NIL → no pooling."
   (cond
     ((http-connection-pool-p x) x)
     ((eq x t) (ensure-default-connection-pool :max-size max-size))

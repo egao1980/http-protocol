@@ -24,7 +24,9 @@
    (proxy :initarg :proxy :accessor http-client-proxy :initform nil
           :documentation "HTTP-PROXY-CONFIG | URL string | scheme/host alist | NIL → *default-proxy-config*.")
    (pool :initarg :pool :accessor http-client-pool :initform t
-         :documentation "HTTP-CONNECTION-POOL | T (shared default) | NIL (no reuse).")
+         :documentation
+         "HTTP-CONNECTION-POOL | T (shared *default-connection-pool*) | NIL.
+          Concrete pools are backend subclasses of HTTP-CONNECTION-POOL.")
    (verify :initarg :verify :accessor http-client-verify :initform t)
    (defaults :initarg :defaults :accessor http-client-defaults :initform nil
              :documentation "Plist of extra backend-specific defaults.")))

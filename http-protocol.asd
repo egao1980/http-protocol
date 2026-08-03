@@ -4,7 +4,7 @@
   :author "egao1980"
   :license "MIT"
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri" "cl-base64"
-               "babel" "bordeaux-threads")
+               "babel")
   :serial t
   :pathname "src"
   :components ((:file "package")

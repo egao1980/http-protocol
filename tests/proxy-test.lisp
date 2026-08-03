@@ -1,5 +1,29 @@
 (in-package #:http-protocol/tests)
 
+(defun %call-with-env (bindings thunk)
+  "BINDINGS = ((name value)…); VALUE NIL unsets. Restores previous values."
+  (let ((saved (mapcar (lambda (b)
+                         (list (first b) (uiop:getenv (first b))))
+                       bindings)))
+    (unwind-protect
+         (progn
+           (dolist (b bindings)
+             (destructuring-bind (name value) b
+               (if value
+                   (setf (uiop:getenv name) value)
+                   #+sbcl (sb-posix:unsetenv name)
+                   #-sbcl (setf (uiop:getenv name) ""))))
+           (funcall thunk))
+      (dolist (b saved)
+        (destructuring-bind (name value) b
+          (if value
+              (setf (uiop:getenv name) value)
+              #+sbcl (sb-posix:unsetenv name)
+              #-sbcl (setf (uiop:getenv name) "")))))))
+
+(defmacro with-env (bindings &body body)
+  `(%call-with-env ',bindings (lambda () ,@body)))
+
 (deftest resolve-proxy-alist-specificity
   (let* ((cfg (make-http-proxy-config
                :from-environment nil
@@ -44,3 +68,56 @@
   (ok (string= "http://p"
                (resolve-proxy (coerce-proxy-config "http://p")
                               "https://example.com"))))
+
+(deftest load-proxy-environment-method
+  (let ((cfg (make-http-proxy-config :from-environment nil)))
+    (with-env (("https_proxy" "http://env-proxy:8080")
+               ("HTTPS_PROXY" nil)
+               ("http_proxy" nil)
+               ("HTTP_PROXY" nil)
+               ("all_proxy" nil)
+               ("ALL_PROXY" nil)
+               ("no_proxy" "localhost")
+               ("NO_PROXY" nil))
+      (load-proxy-environment cfg)
+      (ok (string= "http://env-proxy:8080"
+                   (resolve-proxy cfg "https://example.com/")))
+      (ok (null (resolve-proxy cfg "http://localhost/"))))))
+
+(deftest load-proxy-command-line-method
+  (let ((cfg (make-http-proxy-config :from-environment nil)))
+    (load-proxy-command-line
+     cfg
+     '("prog" "--proxy" "http://cli:3128" "--noproxy" "127.0.0.1,.local"))
+    (ok (string= "http://cli:3128" (resolve-proxy cfg "http://example.com/")))
+    (ok (null (resolve-proxy cfg "http://127.0.0.1/")))))
+
+(deftest load-proxy-cli-overrides-environment
+  (let ((cfg (make-http-proxy-config :from-environment nil)))
+    (with-env (("http_proxy" "http://env:1")
+               ("HTTP_PROXY" nil)
+               ("https_proxy" nil)
+               ("HTTPS_PROXY" nil)
+               ("all_proxy" nil)
+               ("ALL_PROXY" nil)
+               ("no_proxy" nil)
+               ("NO_PROXY" nil))
+      (load-proxy cfg :command-line t :argv '("-x" "http://cli:2")
+                      :environment t :system nil)
+      (ok (string= "http://cli:2" (resolve-proxy cfg "http://example.com/"))))))
+
+(deftest resolve-proxy-system-automatic
+  (let ((cfg (make-http-proxy-config :from-environment nil
+                                     :system-automatic-p t)))
+    (ok (eq :system (resolve-proxy cfg "http://example.com/")))
+    (setf (proxy-config-no-proxy cfg) "example.com")
+    (ok (null (resolve-proxy cfg "http://example.com/")))))
+
+(deftest load-proxy-script-requires-fetch
+  (let ((cfg (make-http-proxy-config :from-environment nil
+                                     :script-url "http://wpad/wpad.dat")))
+    (ok (signals (load-proxy-script cfg) 'unsupported-operation))
+    (load-proxy-script cfg :fetch (lambda (u)
+                                    (ok (string= "http://wpad/wpad.dat" u))
+                                    "PAC"))
+    (ok (string= "PAC" (proxy-config-script-text cfg)))))

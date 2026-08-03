@@ -157,7 +157,17 @@
            #:proxy-config-proxy
            #:proxy-config-no-proxy
            #:proxy-config-use-system-proxy
+           #:proxy-config-system-automatic-p
+           #:proxy-config-script-url
+           #:proxy-config-script-text
            #:*default-proxy-config*
+           #:ensure-default-proxy-config
+           #:load-proxy-environment
+           #:load-proxy-command-line
+           #:load-proxy-system
+           #:load-proxy-script
+           #:evaluate-proxy-script
+           #:load-proxy
            #:coerce-proxy-config
            #:resolve-proxy
            #:effective-proxy-config

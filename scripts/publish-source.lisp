@@ -35,7 +35,9 @@
                :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
                :author "egao1980"
                :depends-on '("trivial-gray-streams" "blackbird" "cl-cookie" "quri")
-               :provides '("http-protocol")))
+               :provides '("http-protocol"
+                           "http-protocol/tests"
+                           "http-protocol/conformance")))
        (result (cl-repository-packager/build-matrix:build-package spec)))
   (format t "~%Publishing ~a:~a (source-only) to ~a/~a~%"
           name version registry-url namespace)

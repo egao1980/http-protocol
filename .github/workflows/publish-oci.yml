@@ -49,7 +49,8 @@ jobs:
         run: |
           STAGING="${RUNNER_TEMP}/http-protocol-src"
           mkdir -p "$STAGING"
-          cp -a http-protocol.asd src LICENSE README.md "$STAGING/"
+          # Include tests/ so consumers can load http-protocol/conformance (encoding CI).
+          cp -a http-protocol.asd src tests LICENSE README.md "$STAGING/"
           echo "STAGING=$STAGING" >> "$GITHUB_ENV"
 
       - name: Install SBCL + Quicklisp

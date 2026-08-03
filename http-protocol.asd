@@ -3,7 +3,7 @@
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri")
+  :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri" "cl-base64")
   :serial t
   :pathname "src"
   :components ((:file "package")
@@ -11,6 +11,7 @@
                (:file "octet-stream")
                (:file "content-encoding")
                (:file "types")
+               (:file "auth")
                (:file "cookies")
                (:file "protocol")
                (:file "facade"))
@@ -23,6 +24,7 @@
   :components ((:file "package")
                (:file "protocol-test")
                (:file "facade-test")
+               (:file "auth-test")
                (:file "cookies-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)

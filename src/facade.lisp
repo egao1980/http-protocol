@@ -6,12 +6,15 @@
                 &key (backend http-protocol:*http-backend*)
                   (client nil clientp)
                   headers content params timeout max-redirects cookies
+                  auth range
                   accept-encoding content-encoding
                   (decompress t) (force-binary t) want-stream
                   raise-for-status
                 &allow-other-keys)
-  "Sync HTTP request. Uses *HTTP-BACKEND* / *HTTP-CLIENT* when not supplied."
+  "Sync HTTP request. Uses *HTTP-BACKEND* / *HTTP-CLIENT* when not supplied.
+   :AUTH (:basic u p) | (:bearer tok); :RANGE (start end) → Range header."
   (declare (ignore headers content params timeout max-redirects cookies
+                   auth range
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
   (let* ((backend (or backend
@@ -55,6 +58,7 @@
                       &key (backend http-protocol:*http-backend*)
                         (client nil clientp)
                         headers content params timeout max-redirects cookies
+                        auth range
                         accept-encoding content-encoding
                         (decompress t) (force-binary t) want-stream
                         raise-for-status
@@ -62,6 +66,7 @@
   "Async HTTP request → Blackbird promise of HTTP-RESPONSE.
    Requires a backend that implements SEND-ASYNC (event-protocol path)."
   (declare (ignore headers content params timeout max-redirects cookies
+                   auth range
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
   (let* ((backend (or backend
@@ -109,6 +114,14 @@
 
 (defun delete-async (url &rest keys &key &allow-other-keys)
   (apply #'request-async :delete url keys))
+
+(defun trace (url &rest keys &key &allow-other-keys)
+  "TRACE request. Servers often disable TRACE; use only when allowed."
+  (apply #'request :trace url keys))
+
+(defun connect (url &rest keys &key &allow-other-keys)
+  "CONNECT tunnel request (expert / proxy). Backend may signal unsupported-operation."
+  (apply #'request :connect url keys))
 
 (defmacro with-client ((var &rest client-keys) &body body)
   "Bind VAR (and *HTTP-CLIENT*) to a fresh client for *HTTP-BACKEND*."

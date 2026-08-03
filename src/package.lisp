@@ -41,6 +41,7 @@
            #:http-client-base-url
            #:http-client-headers
            #:http-client-cookie-jar
+           #:http-client-auth
            #:http-client-timeout
            #:http-client-max-redirects
            #:http-client-proxy
@@ -56,12 +57,18 @@
            #:http-request-timeout
            #:http-request-max-redirects
            #:http-request-cookies
+           #:http-request-auth
+           #:http-request-range
            #:http-request-accept-encoding
            #:http-request-content-encoding
            #:http-request-decompress
            #:http-request-force-binary
            #:http-request-want-stream
            #:http-request-raise-for-status
+           #:effective-auth
+           #:authorization-header-value
+           #:range-header-value
+           #:inject-auth-range-headers
            #:http-response
            #:http-response-p
            #:response-status
@@ -91,7 +98,7 @@
 
 (defpackage #:http
   (:use #:cl #:http-protocol)
-  (:shadow #:get #:delete)
+  (:shadow #:get #:delete #:trace)
   (:export #:request
            #:request-async
            #:get
@@ -108,6 +115,8 @@
            #:patch-async
            #:delete
            #:delete-async
+           #:trace
+           #:connect
            #:with-client
            ;; Re-export common response accessors for DX
            #:response-status

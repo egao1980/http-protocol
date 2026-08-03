@@ -5,13 +5,13 @@
 (defun request (method url &rest keys
                 &key (backend http-protocol:*http-backend*)
                   (client nil clientp)
-                  headers content params timeout max-redirects
+                  headers content params timeout max-redirects cookies
                   accept-encoding content-encoding
                   (decompress t) (force-binary t) want-stream
                   raise-for-status
                 &allow-other-keys)
   "Sync HTTP request. Uses *HTTP-BACKEND* / *HTTP-CLIENT* when not supplied."
-  (declare (ignore headers content params timeout max-redirects
+  (declare (ignore headers content params timeout max-redirects cookies
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
   (let* ((backend (or backend
@@ -54,14 +54,14 @@
 (defun request-async (method url &rest keys
                       &key (backend http-protocol:*http-backend*)
                         (client nil clientp)
-                        headers content params timeout max-redirects
+                        headers content params timeout max-redirects cookies
                         accept-encoding content-encoding
                         (decompress t) (force-binary t) want-stream
                         raise-for-status
                       &allow-other-keys)
   "Async HTTP request → Blackbird promise of HTTP-RESPONSE.
    Requires a backend that implements SEND-ASYNC (event-protocol path)."
-  (declare (ignore headers content params timeout max-redirects
+  (declare (ignore headers content params timeout max-redirects cookies
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
   (let* ((backend (or backend

@@ -30,7 +30,13 @@
 (defclass http-proxy-config ()
   ((proxy :initarg :proxy :accessor proxy-config-proxy
           :initform nil
-          :documentation "Manual static proxy: NIL | URL string | scheme/host alist.")
+          :documentation
+          "Manual static proxy:
+             NIL
+             | URL string (single hop)
+             | list of URL strings (proxy chain for every scheme)
+             | scheme/host alist whose values are a URL or a list of URLs (chain).
+           Example chain: (\"socks5h://127.0.0.1:9050\" \"http://corp:8080\").")
    (no-proxy :initarg :no-proxy :accessor proxy-config-no-proxy
              :initform nil
              :documentation
@@ -50,11 +56,9 @@
    (script-text :initarg :script-text :accessor proxy-config-script-text :initform nil
                 :documentation "Cached manual PAC body."))
   (:documentation
-   "Proxy policy. Three ways to populate:
-      1. CONFIGURE-PROXY — manual URL/alist
-      2. CONFIGURE-PROXY-SCRIPT — manual PAC
-      3. LOAD-PROXY-SYSTEM — env vars + Windows registry + OS PAC/WPAD
-    Then RESOLVE-PROXY."))
+   "Proxy policy. Populate via CONFIGURE-PROXY / CONFIGURE-PROXY-SCRIPT /
+    LOAD-PROXY-SYSTEM, then resolve with RESOLVE-PROXY-CHAIN / PROXY-NEXT-HOP
+    (methods on this class)."))
 
 (defun http-proxy-config-p (x) (typep x 'http-proxy-config))
 
@@ -269,26 +273,65 @@
                              (hostname-matches-pattern-p host pattern)))))
               patterns)))))
 
-(defun normalize-proxy (proxy)
-  "Normalize PROXY to alist form: URL string → ((\"*\" . url))."
-  (etypecase proxy
-    (null nil)
-    (string (list (cons "*" proxy)))
-    (list proxy)))
+(defun proxy-chain-p (x)
+  "True if X is a non-empty list of proxy URL strings (a hop chain), not an alist."
+  (and (consp x) (stringp (car x)) (every #'stringp x)))
 
-(defun proxy-for-uri (uri proxy-alist)
-  "Most specific key wins: scheme://host, scheme, then \"*\"/\"all\"."
-  (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
-         (scheme (quri:uri-scheme u))
-         (host (and (quri:uri-host u) (strip-ipv6-brackets (quri:uri-host u))))
+(defun %as-proxy-chain (value)
+  "Normalize a proxy value to a list of URL strings (possibly empty)."
+  (cond
+    ((null value) nil)
+    ((stringp value) (list value))
+    ((proxy-chain-p value) (copy-list value))
+    (t (list (princ-to-string value)))))
+
+(defun normalize-proxy (proxy)
+  "Normalize PROXY to alist of key → chain (list of URL strings).
+   String → ((\"*\" . (url))). Bare chain list → ((\"*\" . chain)).
+   Alist values coerced to chains."
+  (cond
+    ((null proxy) nil)
+    ((stringp proxy) (list (cons "*" (list proxy))))
+    ((proxy-chain-p proxy) (list (cons "*" (copy-list proxy))))
+    ((listp proxy)
+     (mapcar (lambda (cell)
+               (cons (car cell) (%as-proxy-chain (cdr cell))))
+             proxy))
+    (t (list (cons "*" (%as-proxy-chain proxy))))))
+
+(defun proxy-chain-for-target (scheme host proxy-alist)
+  "Most specific key wins: scheme://host, scheme, then \"*\"/\"all\".
+   Returns a list of proxy URL strings, or NIL."
+  (let* ((scheme (and scheme (string-downcase scheme)))
+         (host (and host (strip-ipv6-brackets host)))
          (host-key (and scheme host (format nil "~A://~A" scheme host)))
          (bracketed-key (and scheme host (find #\: host)
                              (format nil "~A://[~A]" scheme host))))
-    (cdr (or (and host-key (assoc host-key proxy-alist :test #'string-equal))
-             (and bracketed-key (assoc bracketed-key proxy-alist :test #'string-equal))
-             (and scheme (assoc scheme proxy-alist :test #'string-equal))
-             (assoc "*" proxy-alist :test #'string-equal)
-             (assoc "all" proxy-alist :test #'string-equal)))))
+    (copy-list
+     (cdr (or (and host-key (assoc host-key proxy-alist :test #'string-equal))
+              (and bracketed-key (assoc bracketed-key proxy-alist :test #'string-equal))
+              (and scheme (assoc scheme proxy-alist :test #'string-equal))
+              (assoc "*" proxy-alist :test #'string-equal)
+              (assoc "all" proxy-alist :test #'string-equal))))))
+
+(defun proxy-for-uri (uri proxy-alist)
+  "First hop URL for URI from PROXY-ALIST (compat). Prefer PROXY-CHAIN-FOR-TARGET."
+  (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
+         (chain (proxy-chain-for-target (quri:uri-scheme u) (quri:uri-host u)
+                                        (normalize-proxy proxy-alist))))
+    (first chain)))
+
+(defun proxy-url-hop-pair (proxy-url)
+  "PROXY-URL string → (values (SCHEME . HOST) PORT URL)."
+  (multiple-value-bind (scheme host port)
+      (parse-proxy-uri proxy-url)
+    (values (cons scheme host) port proxy-url)))
+
+(defun %hop-pair-equal (a b)
+  "Compare (scheme . host) pairs case-insensitively."
+  (and (consp a) (consp b)
+       (string-equal (car a) (car b))
+       (string-equal (cdr a) (cdr b))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Three configuration modes:
@@ -299,8 +342,9 @@
 
 (defgeneric configure-proxy (config &key proxy no-proxy)
   (:documentation
-   "1. Manual static proxy. PROXY = URL string or scheme/host alist.
-    NO-PROXY optional. Clears SYSTEM-AUTOMATIC-P / manual script slots.")
+   "1. Manual static proxy. PROXY = URL | chain (list of URLs) | scheme/host alist
+    (alist values may themselves be chains). NO-PROXY optional.
+    Clears SYSTEM-AUTOMATIC-P / manual script slots.")
   (:method ((config http-proxy-config) &key (proxy nil proxy-p)
                                          (no-proxy nil no-proxy-p))
     (when proxy-p
@@ -398,24 +442,99 @@
      :no-proxy (proxy-config-no-proxy (ensure-default-proxy-config))
      :system nil)))
 
+(defgeneric resolve-proxy-chain (config scheme host &key port uri)
+  (:documentation
+   "Method on HTTP-PROXY-CONFIG: ordered proxy hop URLs toward SCHEME://HOST.
+
+    Returns:
+      - NIL or () — direct (no proxy; also NO_PROXY hit)
+      - list of proxy URL strings — chain (nearest hop first)
+      - (:SYSTEM) — OS automatic; backend must honor
+
+    URI, when supplied, is used for PAC evaluation; SCHEME/HOST are authoritative
+    for alist lookup and NO_PROXY.")
+  (:method ((config http-proxy-config) scheme host &key port uri)
+    (declare (ignore port))
+    (let* ((host (and host (strip-ipv6-brackets host)))
+           (u (cond (uri (if (typep uri 'quri:uri) uri (quri:uri uri)))
+                    ((and scheme host)
+                     (quri:make-uri :scheme scheme :host host :path "/"))
+                    (t nil))))
+      (when (host-bypassed-p host (proxy-config-no-proxy config))
+        (return-from resolve-proxy-chain nil))
+      (let ((chain (proxy-chain-for-target
+                    scheme host
+                    (normalize-proxy (proxy-config-proxy config)))))
+        (when chain
+          (return-from resolve-proxy-chain chain)))
+      (when (and u
+                 (proxy-config-script-text config)
+                 (proxy-config-script-url config))
+        (let ((pac (evaluate-proxy-script
+                    config u :script (proxy-config-script-text config))))
+          (when pac
+            (return-from resolve-proxy-chain (%as-proxy-chain pac)))))
+      (when (and (proxy-config-use-system-proxy config)
+                 (proxy-config-system-automatic-p config))
+        (return-from resolve-proxy-chain (list :system)))
+      nil)))
+
+(defgeneric proxy-next-hop (config scheme host &key port after uri)
+  (:documentation
+   "Method on HTTP-PROXY-CONFIG: next hop toward request SCHEME/HOST as
+    (PROXY-SCHEME . PROXY-HOST).
+
+    Secondary values: PORT, PROXY-URL.
+    AFTER = NIL (default) → first hop; or a previous (scheme . host) / URL
+    to advance along a chain. NIL return = connect to HOST (direct / end of
+    chain). Primary value :SYSTEM means OS automatic (no pair).")
+  (:method ((config http-proxy-config) scheme host &key port after uri)
+    (let ((chain (resolve-proxy-chain config scheme host :port port :uri uri)))
+      (cond
+        ((null chain) nil)
+        ((equal chain '(:system))
+         (if (or (null after) (eq after :system))
+             (values :system nil nil)
+             nil))
+        (t
+         (let* ((hops (mapcar (lambda (url)
+                                (multiple-value-bind (pair pport purl)
+                                    (proxy-url-hop-pair url)
+                                  (list pair pport purl)))
+                              chain))
+                (start (cond
+                         ((null after) 0)
+                         ((stringp after)
+                          (let ((p (position after chain :test #'string-equal)))
+                            (and p (1+ p))))
+                         ((consp after)
+                          (let ((p (position-if
+                                    (lambda (entry)
+                                      (%hop-pair-equal (first entry) after))
+                                    hops)))
+                            (and p (1+ p))))
+                         (t nil))))
+           (when (and start (< start (length hops)))
+             (destructuring-bind (pair pport purl) (nth start hops)
+               (values pair pport purl)))))))))
+
 (defgeneric resolve-proxy (config uri)
   (:documentation
-   "Effective proxy for URI:
-      - string → proxy URL
-      - NIL → direct
-      - :SYSTEM → OS automatic (registry/PAC/WPAD); backend must honor")
+   "Convenience on HTTP-PROXY-CONFIG: first hop for URI.
+      string → proxy URL | NIL → direct | :SYSTEM → OS automatic.
+    Prefer RESOLVE-PROXY-CHAIN / PROXY-NEXT-HOP for chaining.")
   (:method ((config http-proxy-config) uri)
-    (let ((u (if (typep uri 'quri:uri) uri (quri:uri uri))))
-      (when (host-bypassed-p (quri:uri-host u) (proxy-config-no-proxy config))
-        (return-from resolve-proxy nil))
-      (or (proxy-for-uri u (normalize-proxy (proxy-config-proxy config)))
-          (when (and (proxy-config-script-text config)
-                     (proxy-config-script-url config))
-            (evaluate-proxy-script config u
-                                   :script (proxy-config-script-text config)))
-          (when (and (proxy-config-use-system-proxy config)
-                     (proxy-config-system-automatic-p config))
-            :system))))
+    (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
+           (chain (resolve-proxy-chain config
+                                       (quri:uri-scheme u)
+                                       (quri:uri-host u)
+                                       :port (quri:uri-port u)
+                                       :uri u)))
+      (cond
+        ((null chain) nil)
+        ((equal chain '(:system)) :system)
+        (t (first chain)))))
+  ;; Coerce non-config values so call sites can pass raw :proxy slots.
   (:method ((proxy string) uri)
     (resolve-proxy (coerce-proxy-config proxy) uri))
   (:method ((proxy list) uri)
@@ -425,7 +544,8 @@
     nil))
 
 (defun effective-proxy-config (request client)
-  "Request :PROXY overrides client; else ENSURE-DEFAULT-PROXY-CONFIG."
+  "Request :PROXY overrides client; else ENSURE-DEFAULT-PROXY-CONFIG.
+   Always returns an HTTP-PROXY-CONFIG — call RESOLVE-PROXY-CHAIN on it."
   (coerce-proxy-config
    (or (and request (http-request-proxy request))
        (and client (http-client-proxy client))

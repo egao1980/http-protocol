@@ -146,8 +146,45 @@
   (let ((cfg (make-http-proxy-config :system nil
                                      :system-automatic-p t)))
     (ok (eq :system (resolve-proxy cfg "http://example.com/")))
+    (ok (equal '(:system)
+               (resolve-proxy-chain cfg "http" "example.com")))
     (setf (proxy-config-no-proxy cfg) "example.com")
     (ok (null (resolve-proxy cfg "http://example.com/")))))
+
+(deftest proxy-chain-and-next-hop
+  "RESOLVE-PROXY-CHAIN / PROXY-NEXT-HOP are methods on the config."
+  (let ((cfg (make-http-proxy-config
+              :system nil
+              :proxy '("socks5h://127.0.0.1:9050" "http://corp:8080")
+              :no-proxy nil)))
+    (ok (equal '("socks5h://127.0.0.1:9050" "http://corp:8080")
+               (resolve-proxy-chain cfg "https" "example.com")))
+    (ok (string= "socks5h://127.0.0.1:9050"
+                 (resolve-proxy cfg "https://example.com/")))
+    (multiple-value-bind (pair port url)
+        (proxy-next-hop cfg "https" "example.com")
+      (ok (equal '("socks5h" . "127.0.0.1") pair))
+      (ok (= 9050 port))
+      (ok (string= "socks5h://127.0.0.1:9050" url)))
+    (multiple-value-bind (pair port url)
+        (proxy-next-hop cfg "https" "example.com"
+                        :after '("socks5h" . "127.0.0.1"))
+      (ok (equal '("http" . "corp") pair))
+      (ok (= 8080 port))
+      (ok (string= "http://corp:8080" url)))
+    (ok (null (proxy-next-hop cfg "https" "example.com"
+                              :after '("http" . "corp")))))
+  (let ((cfg (make-http-proxy-config
+              :system nil
+              :proxy '(("https" . ("socks5h://a:1080" "http://b:3128"))
+                       ("http" . "http://plain:8080"))
+              :no-proxy "localhost")))
+    (ok (equal '("socks5h://a:1080" "http://b:3128")
+               (resolve-proxy-chain cfg "https" "api.example")))
+    (ok (equal '("http://plain:8080")
+               (resolve-proxy-chain cfg "http" "api.example")))
+    (ok (null (resolve-proxy-chain cfg "https" "localhost")))
+    (ok (null (proxy-next-hop cfg "https" "localhost")))))
 
 (deftest socks-proxy-uri-and-kind
   (ok (eq :socks5 (proxy-kind "socks5://127.0.0.1:9050")))

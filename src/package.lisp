@@ -169,6 +169,9 @@
            #:evaluate-proxy-script
            #:coerce-proxy-config
            #:resolve-proxy
+           #:resolve-proxy-chain
+           #:proxy-next-hop
+           #:proxy-url-hop-pair
            #:effective-proxy-config
            #:host-bypassed-p
            #:normalize-no-proxy

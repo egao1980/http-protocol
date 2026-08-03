@@ -24,6 +24,13 @@
            #:make-decoding-stream
            #:make-encoding-stream
            #:make-octet-input-stream
+           #:make-buffered-binary-input-stream
+           #:buffered-binary-input-stream
+           #:*http-stream-buffer-size*
+           #:copy-stream
+           #:prepare-request-content
+           #:wrap-response-body-stream
+           #:body-stream
            #:slurp-octets
            #:coerce-to-octets
            #:content-coding-supported-p
@@ -98,7 +105,7 @@
 
 (defpackage #:http
   (:use #:cl #:http-protocol)
-  (:shadow #:get #:delete #:trace)
+  (:shadow #:get #:delete #:trace #:stream)
   (:export #:request
            #:request-async
            #:get
@@ -126,5 +133,9 @@
            #:response-url
            #:response-cookies
            #:response-history
+           #:body-stream
+           #:stream
+           #:stream-async
+           #:*http-stream-buffer-size*
            #:*http-backend*
            #:*http-client*))

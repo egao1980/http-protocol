@@ -9,8 +9,10 @@
   :components ((:file "package")
                (:file "conditions")
                (:file "octet-stream")
+               (:file "buffered-stream")
                (:file "content-encoding")
                (:file "types")
+               (:file "body")
                (:file "auth")
                (:file "cookies")
                (:file "protocol")
@@ -23,6 +25,7 @@
   :serial t
   :components ((:file "package")
                (:file "protocol-test")
+               (:file "body-stream-test")
                (:file "facade-test")
                (:file "auth-test")
                (:file "cookies-test"))

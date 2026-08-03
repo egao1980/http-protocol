@@ -68,25 +68,52 @@
     (when (> i start)
       (values (subseq s start i) i))))
 
+;;; MIME charset → babel encoding (RFC 8187 mime-charset). UTF-8 preferred on
+;;; the wire; recipients SHOULD decode any charset they implement (babel).
+(defparameter *cd-charset-aliases*
+  '(("UTF8" . :utf-8)
+    ("UTF-8" . :utf-8)
+    ("ISO8859-1" . :iso-8859-1)
+    ("ISO-8859-1" . :iso-8859-1)
+    ("LATIN1" . :iso-8859-1)
+    ("LATIN-1" . :iso-8859-1)
+    ("WINDOWS-1252" . :cp1252)
+    ("CP1252" . :cp1252)
+    ("SHIFT_JIS" . :cp932)
+    ("SHIFT-JIS" . :cp932)
+    ("SJIS" . :cp932)
+    ("EUC-JP" . :eucjp)
+    ("EUCJP" . :eucjp)))
+
+(defun %cd-charset-encoding (charset)
+  "Map RFC 8187 charset token → babel encoding keyword, or NIL if unsupported."
+  (let* ((up (string-upcase (string-trim '(#\Space #\Tab) charset)))
+         (enc (or (cdr (assoc up *cd-charset-aliases* :test #'string=))
+                  (intern up :keyword))))
+    (handler-case
+        (progn (babel:make-external-format enc) enc)
+      (error () nil))))
+
 (defun %cd-decode-ext-value (raw)
   "RFC 8187 §3.2: charset ' [language] ' value-chars.
 
-   Only UTF-8 is decoded (RFC 8187 prefers UTF-8; unknown charset → NIL so
-   callers can fall back to filename=)."
+   Percent-decode value-chars to octets, then decode with babel using CHARSET.
+   Unknown/unsupported charset → NIL (caller falls back to filename=)."
   (let* ((raw (string-trim '(#\Space #\Tab) raw))
          (q1 (position #\' raw)))
     (unless q1
       (return-from %cd-decode-ext-value nil))
-    (let* ((charset (string-upcase (subseq raw 0 q1)))
+    (let* ((charset (subseq raw 0 q1))
            (rest (subseq raw (1+ q1)))
            (q2 (position #\' rest)))
       (unless q2
         (return-from %cd-decode-ext-value nil))
-      (let ((value-chars (subseq rest (1+ q2))))
-        (unless (member charset '("UTF-8" "UTF8") :test #'string=)
+      (let ((enc (%cd-charset-encoding charset))
+            (value-chars (subseq rest (1+ q2))))
+        (unless enc
           (return-from %cd-decode-ext-value nil))
         (handler-case
-            (quri:url-decode value-chars :encoding :utf-8)
+            (quri:url-decode value-chars :encoding enc)
           (error () nil))))))
 
 (defun %cd-sanitize-filename (name)
@@ -103,7 +130,7 @@
 
    Returns (values disposition-type params) where PARAMS is an alist of
    downcased parameter names to decoded string values. Both `filename` and
-   `filename*` may be present; `filename*` is decoded per RFC 8187 (UTF-8)."
+   `filename*` may be present; `filename*` is decoded per RFC 8187 via babel."
   (unless (and header (stringp header) (plusp (length header)))
     (return-from parse-content-disposition (values nil nil)))
   (let ((i (%cd-skip-ws header 0)))

@@ -47,11 +47,17 @@
                (content-disposition-filename
                 "attachment; filename=\"a\\\"b\""))))
 
+(deftest cd-iso-8859-1-via-babel
+  "RFC 8187 mime-charset decoded with babel (not UTF-8-only)."
+  (ok (string= (map 'string #'code-char '(99 97 102 #xe9))
+               (content-disposition-filename
+                "attachment; filename*=ISO-8859-1''%63%61%66%E9"))))
+
 (deftest cd-unknown-charset-falls-back
   "RFC 8187: unsupported charset → ignore filename*; use filename="
   (ok (string= "fallback.txt"
                (content-disposition-filename
-                "attachment; filename=\"fallback.txt\"; filename*=ISO-8859-1''foo"))))
+                "attachment; filename=\"fallback.txt\"; filename*=X-UNKNOWN-CS''foo"))))
 
 (deftest parse-content-disposition-type
   (multiple-value-bind (type params)

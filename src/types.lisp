@@ -16,17 +16,23 @@
                :documentation "cl-cookie:cookie-jar (requests Session jar). Lazy-created by backends.")
    (auth :initarg :auth :accessor http-client-auth :initform nil
          :documentation "Default :auth — (:basic u p) | (:bearer tok) | string.")
-   (timeout :initarg :timeout :accessor http-client-timeout :initform nil)
+   (timeout :initarg :timeout :accessor http-client-timeout :initform nil
+            :documentation "HTTP-TIMEOUT | number (total) | plist | NIL.")
+   (retry :initarg :retry :accessor http-client-retry :initform nil
+          :documentation "HTTP-RETRY | integer total | T | NIL (no retry).")
    (max-redirects :initarg :max-redirects :accessor http-client-max-redirects :initform 5)
-   (proxy :initarg :proxy :accessor http-client-proxy :initform nil)
+   (proxy :initarg :proxy :accessor http-client-proxy :initform nil
+          :documentation "HTTP-PROXY-CONFIG | URL string | scheme/host alist | NIL → *default-proxy-config*.")
+   (pool :initarg :pool :accessor http-client-pool :initform t
+         :documentation "HTTP-CONNECTION-POOL | T (shared default) | NIL (no reuse).")
    (verify :initarg :verify :accessor http-client-verify :initform t)
    (defaults :initarg :defaults :accessor http-client-defaults :initform nil
              :documentation "Plist of extra backend-specific defaults.")))
 
 (defun http-client-p (x) (typep x 'http-client))
 
-;;; Upload / download file value — stream + metadata. No filesystem.
-;;; Higher layers (pathlib + JSON/MIME) construct these from paths/models.
+;;; Upload / download file value — stream + metadata. No filesystem here
+;;; (urllib3/httpx layer). Path open/save + MIME guess → requests-like lib later.
 
 (defclass http-file ()
   ((filename :initarg :filename :accessor http-file-filename :initform nil
@@ -64,8 +70,13 @@
    (files :initarg :files :accessor http-request-files :initform nil
           :documentation "Multipart files: alist ((name . http-file|stream|octets)…) or list of http-file.")
    (params :initarg :params :accessor http-request-params :initform nil)
-   (timeout :initarg :timeout :accessor http-request-timeout :initform nil)
+   (timeout :initarg :timeout :accessor http-request-timeout :initform nil
+            :documentation "Overrides client; HTTP-TIMEOUT | number | plist.")
+   (retry :initarg :retry :accessor http-request-retry :initform nil
+          :documentation "Overrides client; HTTP-RETRY | integer | T | NIL.")
    (max-redirects :initarg :max-redirects :accessor http-request-max-redirects :initform nil)
+   (proxy :initarg :proxy :accessor http-request-proxy :initform nil
+          :documentation "Overrides client proxy config for this request.")
    (cookies :initarg :cookies :accessor http-request-cookies :initform nil
             :documentation "Per-request cookies: alist ((name . value)…) merged into jar, or a cookie-jar.")
    (auth :initarg :auth :accessor http-request-auth :initform nil

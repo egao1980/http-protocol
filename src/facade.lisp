@@ -13,7 +13,8 @@
                   raise-for-status
                 &allow-other-keys)
   "Sync HTTP request. Uses *HTTP-BACKEND* / *HTTP-CLIENT* when not supplied.
-   :CONTENT stream|octets|string; :DATA/:FILES → multipart (stream-backed parts)."
+   :PARAMS → query (quri); :DATA alist → urlencoded; :DATA+:FILES/:FILES → multipart;
+   :CONTENT → raw body."
   (declare (ignore headers content data files params timeout max-redirects cookies
                    auth range
                    accept-encoding content-encoding decompress force-binary

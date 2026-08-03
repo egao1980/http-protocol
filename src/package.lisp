@@ -33,6 +33,10 @@
            #:prepare-request-body
            #:wrap-response-body-stream
            #:body-stream
+           #:normalize-form-alist
+           #:encode-urlencoded
+           #:apply-request-params
+           #:finalize-request-url!
            #:make-multipart-body
            #:make-multipart-form-stream
            #:build-multipart-parts

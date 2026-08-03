@@ -23,6 +23,9 @@
 
 (defgeneric send (backend client request &key)
   (:documentation "Perform REQUEST on CLIENT via BACKEND. Blocking → HTTP-RESPONSE.")
+  (:method :before ((backend http-backend) client request &key)
+    (declare (ignore backend client))
+    (finalize-request-url! request))
   (:method ((backend http-backend) client request &key)
     (declare (ignore client request))
     (error 'unsupported-operation :operation 'send
@@ -37,7 +40,12 @@
     Returns an opaque handle for CANCEL-REQUEST.
 
     Facade layers wrap this as a Blackbird-shaped promise — backends must not
-    hard-depend on Blackbird.")
+    hard-depend on Blackbird.
+
+    :BEFORE merges REQUEST :params into the URL (quri) for all backends.")
+  (:method :before ((backend http-backend) client request &key callback error-callback)
+    (declare (ignore backend client callback error-callback))
+    (finalize-request-url! request))
   (:method ((backend http-backend) client request &key callback error-callback)
     (declare (ignore client request callback error-callback))
     (error 'unsupported-operation :operation 'send-async

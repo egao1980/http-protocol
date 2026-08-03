@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Package version (default: from tag or 0.1.0)"
+        description: "Package version (default: from tag or PACKAGE_VERSION_DEFAULT)"
         required: false
         default: ""
       registry:

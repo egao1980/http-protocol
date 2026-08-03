@@ -168,7 +168,7 @@
            #:load-proxy-system-platform
            #:evaluate-proxy-script
            #:resolve-system-proxy
-           #:resolve-system-proxy-platform
+           #:use-os-automatic-proxy-p
            #:parse-windows-proxy-server
            #:parse-windows-proxy-override
            #:coerce-proxy-config

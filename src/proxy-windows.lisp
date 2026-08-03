@@ -111,16 +111,8 @@
             (parse-windows-proxy-override override)))
     (when pac
       (setf (proxy-config-script-url config) pac))
-    ;; Residual OS automatic (PAC/WPAD/WinHTTP) only when env+registry
-    ;; left no concrete proxy. Env proxy ⇒ no :SYSTEM (env overrides).
+    ;; No concrete URL after env+registry static → WinHTTP may AUTOMATIC
+    ;; (PAC/WPAD). Usocket/async ignore SYSTEM-AUTOMATIC-P (direct).
     (when (null (proxy-config-proxy config))
       (setf (proxy-config-system-automatic-p config) t))
     nil))
-
-(defmethod resolve-system-proxy-platform ((config http-proxy-config) uri)
-  "After env miss: :SYSTEM so backends use WinHTTP AUTOMATIC / GetProxyForUrl."
-  (declare (ignore uri))
-  (when (and (%windows-p)
-             (proxy-config-use-system-proxy config)
-             (proxy-config-system-automatic-p config))
-    :system))

@@ -57,8 +57,10 @@
            #:http-client-cookie-jar
            #:http-client-auth
            #:http-client-timeout
+           #:http-client-retry
            #:http-client-max-redirects
            #:http-client-proxy
+           #:http-client-pool
            #:http-client-verify
            #:http-file
            #:http-file-p
@@ -79,7 +81,9 @@
            #:http-request-files
            #:http-request-params
            #:http-request-timeout
+           #:http-request-retry
            #:http-request-max-redirects
+           #:http-request-proxy
            #:http-request-cookies
            #:http-request-auth
            #:http-request-range
@@ -119,7 +123,85 @@
            #:send
            #:send-async
            #:cancel-request
-           #:raise-for-status))
+           #:raise-for-status
+           ;; Timeout / retry / proxy / pool (urllib3 transport policy)
+           #:http-timeout
+           #:http-timeout-p
+           #:make-http-timeout
+           #:timeout-connect
+           #:timeout-read
+           #:timeout-total
+           #:coerce-timeout
+           #:effective-timeout
+           #:timeout-connect-seconds
+           #:timeout-read-seconds
+           #:timeout-total-seconds
+           #:http-retry
+           #:http-retry-p
+           #:make-http-retry
+           #:retry-total
+           #:retry-connect
+           #:retry-read
+           #:retry-status
+           #:retry-allowed-methods
+           #:retry-backoff-factor
+           #:retry-backoff-max
+           #:retry-respect-retry-after
+           #:coerce-retry
+           #:effective-retry
+           #:retry-should-retry-p
+           #:retry-delay-seconds
+           #:http-proxy-config
+           #:http-proxy-config-p
+           #:make-http-proxy-config
+           #:proxy-config-proxy
+           #:proxy-config-no-proxy
+           #:proxy-config-use-system-proxy
+           #:proxy-config-system-automatic-p
+           #:proxy-config-script-url
+           #:proxy-config-script-text
+           #:*default-proxy-config*
+           #:ensure-default-proxy-config
+           #:configure-proxy
+           #:configure-proxy-script
+           #:load-proxy-system
+           #:load-proxy-system-platform
+           #:evaluate-proxy-script
+           #:coerce-proxy-config
+           #:resolve-proxy
+           #:proxy-next-hop
+           #:select-proxy
+           #:effective-proxy-config
+           #:host-bypassed-p
+           #:normalize-no-proxy
+           #:hostname-matches-pattern-p
+           #:strip-ipv6-brackets
+           #:format-host-port
+           #:parse-proxy-uri
+           #:normalize-proxy-scheme
+           #:socks-proxy-scheme-p
+           #:http-proxy-scheme-p
+           #:proxy-kind
+           #:socks-remote-dns-p
+           #:http-connection-pool
+           #:http-connection-pool-p
+           #:lru-connection-pool
+           #:make-lru-connection-pool
+           #:*default-connection-pool*
+           #:ensure-default-connection-pool
+           #:pool-acquire
+           #:pool-release
+           #:pool-discard
+           #:pool-clear
+           #:connection-alive-p
+           #:pool-key
+           #:coerce-connection-pool
+           #:effective-connection-pool
+           #:pooled-body-stream
+           #:make-pooled-body-stream
+           #:pooled-stream-source
+           #:pooled-stream-connection
+           #:release-response-connection))
 
 (defpackage #:http
   (:use #:cl #:http-protocol)

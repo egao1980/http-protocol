@@ -128,7 +128,9 @@
   (apply #'request method url :want-stream t keys))
 
 (defun stream-async (method url &rest keys &key &allow-other-keys)
-  "Async request with :WANT-STREAM T → promise of HTTP-RESPONSE."
+  "Async request with :WANT-STREAM T → promise of HTTP-RESPONSE.
+   RESPONSE-BODY is a binary input stream; keep the event loop running while reading
+   (do not block the loop thread on stream reads — copy on a worker if needed)."
   (apply #'request-async method url :want-stream t keys))
 
 (defmacro with-client ((var &rest client-keys) &body body)

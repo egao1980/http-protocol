@@ -4,7 +4,7 @@
   :author "egao1980"
   :license "MIT"
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri" "cl-base64"
-               "babel")
+               "babel" "bordeaux-threads")
   :serial t
   :pathname "src"
   :components ((:file "package")
@@ -14,6 +14,11 @@
                (:file "content-encoding")
                (:file "content-disposition")
                (:file "types")
+               (:file "timeout")
+               (:file "retry")
+               (:file "proxy")
+               (:file "pool")
+               (:file "pooled-stream")
                (:file "body")
                (:file "multipart")
                (:file "auth")
@@ -33,7 +38,10 @@
                (:file "content-disposition-test")
                (:file "facade-test")
                (:file "auth-test")
-               (:file "cookies-test"))
+               (:file "cookies-test")
+               (:file "timeout-retry-test")
+               (:file "proxy-test")
+               (:file "pool-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)
                (error "tests failed for ~A" (component-name c)))))

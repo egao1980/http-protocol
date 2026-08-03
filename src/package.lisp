@@ -174,6 +174,11 @@
            #:strip-ipv6-brackets
            #:format-host-port
            #:parse-proxy-uri
+           #:normalize-proxy-scheme
+           #:socks-proxy-scheme-p
+           #:http-proxy-scheme-p
+           #:proxy-kind
+           #:socks-remote-dns-p
            #:http-connection-pool
            #:http-connection-pool-p
            #:lru-connection-pool

@@ -114,6 +114,21 @@
     (setf (proxy-config-no-proxy cfg) "example.com")
     (ok (null (resolve-proxy cfg "http://example.com/")))))
 
+(deftest socks-proxy-uri-and-kind
+  (ok (eq :socks5 (proxy-kind "socks5://127.0.0.1:9050")))
+  (ok (eq :socks5 (proxy-kind "socks5h://user:pass@proxy:1080")))
+  (ok (socks-remote-dns-p "socks5h"))
+  (ok (not (socks-remote-dns-p "socks5")))
+  (multiple-value-bind (scheme host port user pass)
+      (parse-proxy-uri "socks5h://u:p@127.0.0.1:1080")
+    (ok (string= "socks5h" scheme))
+    (ok (string= "127.0.0.1" host))
+    (ok (= 1080 port))
+    (ok (string= "u" user))
+    (ok (string= "p" pass)))
+  (ok (socks-proxy-scheme-p "socks"))
+  (ok (http-proxy-scheme-p "http")))
+
 (deftest configure-proxy-script-manual
   (let ((cfg (make-http-proxy-config :system nil)))
     (ok (signals (configure-proxy-script cfg :url "http://wpad/wpad.dat")

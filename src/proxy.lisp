@@ -379,14 +379,50 @@
        (and client (http-client-proxy client))
        (ensure-default-proxy-config))))
 
+(defun normalize-proxy-scheme (scheme)
+  "Canonical lowercase scheme string."
+  (string-downcase (or scheme "http")))
+
+(defun socks-proxy-scheme-p (scheme)
+  "True for socks / socks4 / socks4a / socks5 / socks5h."
+  (member (normalize-proxy-scheme scheme)
+          '("socks" "socks4" "socks4a" "socks5" "socks5h")
+          :test #'string=))
+
+(defun http-proxy-scheme-p (scheme)
+  (member (normalize-proxy-scheme scheme) '("http" "https") :test #'string=))
+
+(defun proxy-kind (proxy-url)
+  "Classify PROXY-URL → :HTTP | :SOCKS5 | :SOCKS4 | :SYSTEM | NIL."
+  (cond
+    ((eq proxy-url :system) :system)
+    ((null proxy-url) nil)
+    (t
+     (let ((s (normalize-proxy-scheme
+               (quri:uri-scheme (quri:uri (if (stringp proxy-url)
+                                              proxy-url
+                                              (princ-to-string proxy-url)))))))
+       (cond
+         ((member s '("socks" "socks5" "socks5h") :test #'string=) :socks5)
+         ((member s '("socks4" "socks4a") :test #'string=) :socks4)
+         ((http-proxy-scheme-p s) :http)
+         (t :http))))))
+
+(defun socks-remote-dns-p (scheme)
+  "True when the proxy should resolve the hostname (socks5h / socks4a)."
+  (member (normalize-proxy-scheme scheme) '("socks5h" "socks4a" "socks")
+          :test #'string=))
+
 (defun parse-proxy-uri (proxy-url)
-  "Return (values scheme host port user password) for a proxy URL string."
+  "Return (values scheme host port user password) for a proxy URL string.
+   Schemes: http(s), socks / socks5 / socks5h (default port 1080),
+   socks4 / socks4a (default 1080)."
   (let* ((u (quri:uri proxy-url))
-         (scheme (or (quri:uri-scheme u) "http"))
+         (scheme (normalize-proxy-scheme (or (quri:uri-scheme u) "http")))
          (host (strip-ipv6-brackets (quri:uri-host u)))
          (port (or (quri:uri-port u)
                    (cond ((string-equal scheme "https") 443)
-                         ((string-equal scheme "socks5") 1080)
+                         ((socks-proxy-scheme-p scheme) 1080)
                          (t 80))))
          (user (quri:uri-userinfo u))
          (pass nil))

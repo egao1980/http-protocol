@@ -36,6 +36,8 @@
            #:make-multipart-body
            #:make-multipart-form-stream
            #:build-multipart-parts
+           #:parse-content-disposition
+           #:content-disposition-filename
            #:slurp-octets
            #:coerce-to-octets
            #:content-coding-supported-p

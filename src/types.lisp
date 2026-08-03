@@ -105,52 +105,13 @@
             :documentation "Prior HTTP-RESPONSE objects in a redirect chain.")
    (request :initarg :request :reader response-request :initform nil)))
 
-(defun %unquote-disposition-token (raw)
-  (let ((raw (string-trim '(#\Space #\Tab) raw)))
-    (cond
-      ((and (>= (length raw) 2)
-            (char= (char raw 0) #\")
-            (char= (char raw (1- (length raw))) #\"))
-       (subseq raw 1 (1- (length raw))))
-      ((plusp (length raw)) raw))))
-
-(defun %disposition-param-value (header start)
-  (let* ((rest (subseq header start))
-         (end (or (position #\; rest) (length rest))))
-    (%unquote-disposition-token (subseq rest 0 end))))
-
-(defun %content-disposition-filename (header)
-  "Parse filename= / filename*= from a Content-Disposition header value."
-  (when (and header (stringp header))
-    (let ((star (search "filename*=" header :test #'char-equal)))
-      (when star
-        (let ((raw (%disposition-param-value header (+ star (length "filename*=")))))
-          (when raw
-            ;; RFC 5987: charset'lang'value
-            (let ((q (position #\' raw :from-end t)))
-              (return-from %content-disposition-filename
-                (if q
-                    (or (ignore-errors (quri:url-decode (subseq raw (1+ q))))
-                        (subseq raw (1+ q)))
-                    raw)))))))
-    ;; Match filename= but not the filename= prefix of filename*=
-    (loop with from = 0
-          for pos = (search "filename=" header :start2 from :test #'char-equal)
-          while pos
-          for name-end = (+ pos (length "filename"))
-          do (if (and (< name-end (length header))
-                      (char= (char header name-end) #\*))
-                 (setf from (1+ pos))
-                 (return (%disposition-param-value
-                          header (+ pos (length "filename="))))))))
-
 (defun response-as-http-file (response &key filename content-type)
   "Wrap RESPONSE body as an HTTP-FILE (stream when :want-stream was used).
 
-   FILENAME defaults to Content-Disposition filename when present."
+   FILENAME defaults to Content-Disposition (RFC 6266 §4.3 / RFC 8187)."
   (make-http-file (or (response-body response) #())
                   :filename (or filename
-                                (%content-disposition-filename
+                                (content-disposition-filename
                                  (response-header response "content-disposition")))
                   :content-type (or content-type
                                     (response-header response "content-type")

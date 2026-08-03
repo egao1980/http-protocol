@@ -143,12 +143,41 @@
                    (resolve-proxy cfg "http://example.com/"))))))
 
 (deftest resolve-proxy-system-automatic
+  "SYSTEM path: env > registry/PAC. Empty env → platform (:SYSTEM on Windows)."
   (let ((cfg (make-http-proxy-config :system nil
                                      :system-automatic-p t)))
-    (ok (eq :system (resolve-proxy cfg "http://example.com/")))
-    (ok (eq :system (proxy-next-hop cfg "http" "example.com")))
-    (setf (proxy-config-no-proxy cfg) "example.com")
-    (ok (null (resolve-proxy cfg "http://example.com/")))))
+    (with-env (("https_proxy" nil) ("HTTPS_PROXY" nil)
+               ("http_proxy" nil) ("HTTP_PROXY" nil)
+               ("all_proxy" nil) ("ALL_PROXY" nil)
+               ("no_proxy" nil) ("NO_PROXY" nil))
+      (let ((got (resolve-proxy cfg "http://example.com/")))
+        ;; Unix: NIL (direct). Windows: :SYSTEM for WinHTTP AUTOMATIC.
+        (ok (member got '(nil :system))))
+      (setf (proxy-config-no-proxy cfg) "example.com")
+      (ok (null (resolve-proxy cfg "http://example.com/"))))))
+
+(deftest resolve-system-env-overrides-platform
+  "Live env wins over SYSTEM-AUTOMATIC-P / registry residual."
+  (let ((cfg (make-http-proxy-config :system nil
+                                     :system-automatic-p t
+                                     :proxy nil)))
+    (with-env (("http_proxy" "http://env-wins:8080")
+               ("HTTP_PROXY" nil)
+               ("https_proxy" nil) ("HTTPS_PROXY" nil)
+               ("all_proxy" nil) ("ALL_PROXY" nil)
+               ("no_proxy" nil) ("NO_PROXY" nil))
+      (ok (string= "http://env-wins:8080"
+                   (resolve-proxy cfg "http://example.com/")))
+      (ok (string= "http://env-wins:8080"
+                   (resolve-system-proxy cfg "http://example.com/"))))))
+
+(deftest parse-windows-proxy-server-forms
+  (ok (equal '(("*" . "http://127.0.0.1:3128"))
+             (parse-windows-proxy-server "127.0.0.1:3128")))
+  (ok (equal '(("http" . "http://a:1") ("https" . "http://b:2"))
+             (parse-windows-proxy-server "http=a:1;https=b:2")))
+  (ok (string= "localhost,127.0.0.1,::1,.corp"
+               (parse-windows-proxy-override "<local>;.corp"))))
 
 (deftest proxy-next-hop-single
   "One proxy per request — PROXY-NEXT-HOP → (scheme . host)."

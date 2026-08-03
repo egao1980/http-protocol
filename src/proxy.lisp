@@ -33,7 +33,9 @@
           :documentation "Manual static proxy: NIL | URL string | scheme/host alist.")
    (no-proxy :initarg :no-proxy :accessor proxy-config-no-proxy
              :initform nil
-             :documentation "Comma/space string or list of NO_PROXY patterns.")
+             :documentation
+             "NO_PROXY: comma/space string or list of globs/patterns
+              (\"*\", \"*.corp\", \".example.com\", CIDR, IP). See HOST-BYPASSED-P.")
    (use-system-proxy :initarg :use-system-proxy :accessor proxy-config-use-system-proxy
                      :initform t
                      :documentation "Allow LOAD-PROXY-SYSTEM when resolving.")
@@ -87,7 +89,9 @@
   (or *default-proxy-config*
       (setf *default-proxy-config*
             (load-proxy-system
-             (make-http-proxy-config :system nil)))))(defun strip-ipv6-brackets (host)
+             (make-http-proxy-config :system nil)))))
+
+(defun strip-ipv6-brackets (host)
   "Strip RFC 2732 brackets: \"[::1]\" → \"::1\"."
   (if (and (stringp host) (plusp (length host)) (char= (char host 0) #\[))
       (let ((close (position #\] host)))
@@ -188,26 +192,74 @@
              (eql total-bits pattern-bits)
              (= address pattern-address)))))
 
+(defun normalize-no-proxy (no-proxy)
+  "Normalize NO-PROXY to a list of pattern strings.
+   Accepts NIL, a comma/space-separated string, or a list of globs/patterns
+   (dexador / curl NO_PROXY shape)."
+  (cond
+    ((null no-proxy) nil)
+    ((listp no-proxy)
+     (remove "" (mapcar (lambda (s) (string-trim '(#\Space #\Tab) (string s)))
+                        no-proxy)
+             :test #'string=))
+    ((stringp no-proxy)
+     (remove "" (mapcar (lambda (s) (string-trim '(#\Space #\Tab) s))
+                        (uiop:split-string no-proxy :separator ", "))
+             :test #'string=))
+    (t (list (princ-to-string no-proxy)))))
+
+(defun hostname-glob-match-p (host pattern)
+  "Case-insensitive glob match: * = any run of chars, ? = one char."
+  (let ((host (string-downcase host))
+        (pattern (string-downcase pattern)))
+    (labels ((rec (hi pat-i)
+               (cond
+                 ((and (>= hi (length host)) (>= pat-i (length pattern))) t)
+                 ((>= pat-i (length pattern)) nil)
+                 ((char= (char pattern pat-i) #\*)
+                  (loop for i from hi to (length host)
+                        thereis (rec i (1+ pat-i))))
+                 ((>= hi (length host)) nil)
+                 ((or (char= (char pattern pat-i) #\?)
+                      (char= (char host hi) (char pattern pat-i)))
+                  (rec (1+ hi) (1+ pat-i)))
+                 (t nil))))
+      (rec 0 0))))
+
 (defun hostname-matches-pattern-p (host pattern)
-  (let* ((dotless (string-left-trim "." pattern))
-         (pattern (subseq dotless 0 (or (position #\: dotless) (length dotless)))))
-    (or (string-equal host pattern)
-        (let ((pl (length pattern))
-              (hl (length host)))
-          (and (plusp pl)
-               (> hl pl)
-               (char= (char host (- hl pl 1)) #\.)
-               (string-equal pattern (subseq host (- hl pl))))))))
+  "Match HOST against a NO_PROXY hostname pattern (dexador#202 + globs).
+
+   - \"*\" → all hosts
+   - patterns with * or ? → glob (e.g. \"*.example.com\")
+   - otherwise exact match or domain suffix (\"example.com\" / \".example.com\"
+     matches \"api.example.com\"; suffix must align on a dot)
+   - trailing :port in PATTERN is ignored"
+  (let* ((pattern (string-trim '(#\Space #\Tab) pattern))
+         ;; Hostname patterns are not IPv6 — first ':' starts a port suffix.
+         (colon (position #\: pattern))
+         (pattern (if colon (subseq pattern 0 colon) pattern)))
+    (cond
+      ((string= pattern "*") t)
+      ((or (find #\* pattern) (find #\? pattern))
+       (hostname-glob-match-p host pattern))
+      (t
+       (let ((pattern (string-left-trim "." pattern)))
+         (or (string-equal host pattern)
+             (let ((pl (length pattern))
+                   (hl (length host)))
+               (and (plusp pl)
+                    (> hl pl)
+                    (char= (char host (- hl pl 1)) #\.)
+                    (string-equal pattern (subseq host (- hl pl)))))))))))
 
 (defun host-bypassed-p (host no-proxy)
-  "True if HOST matches NO-PROXY patterns (NO_PROXY semantics)."
+  "True if HOST matches NO-PROXY (string or list of globs/patterns).
+
+   Patterns (per entry): \"*\", hostname globs (*.corp), domain suffix,
+   IP literal, or CIDR (10.0.0.0/8, fd00::/8). List form preferred."
   (when (and host no-proxy)
     (let ((host (strip-ipv6-brackets host))
-          (patterns (if (listp no-proxy)
-                        no-proxy
-                        (remove "" (mapcar (lambda (s) (string-trim '(#\Space #\Tab) s))
-                                           (uiop:split-string no-proxy :separator ", "))
-                                :test #'string=))))
+          (patterns (normalize-no-proxy no-proxy)))
       (multiple-value-bind (address total-bits) (parse-ip-address host)
         (some (lambda (pattern)
                 (and (plusp (length pattern))

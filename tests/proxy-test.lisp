@@ -50,6 +50,41 @@
     (ok (string= "http://proxy:8080"
                  (resolve-proxy cfg "http://example.com/")))))
 
+(deftest no-proxy-list-of-globs
+  "dexador#202 list form + *.domain globs."
+  ;; dexador host-matching corpus
+  (ok (host-bypassed-p "example.com" "example.com"))
+  (ok (host-bypassed-p "api.example.com" ".example.com"))
+  (ok (host-bypassed-p "api.example.com" "example.com"))
+  (ok (not (host-bypassed-p "notexample.com" "example.com")))
+  (ok (host-bypassed-p "anything.net" "*"))
+  (ok (host-bypassed-p "example.com" "example.com:443"))
+  (ok (host-bypassed-p "a.foo.org" '("bar.com" ".foo.org")))
+  (ok (not (host-bypassed-p "a.foo.org" nil)))
+  ;; globs
+  (ok (host-bypassed-p "api.corp.example" '("*.corp.example" "localhost")))
+  (ok (not (host-bypassed-p "corp.example" '("*.corp.example")))
+      "*.corp.example needs a label before .corp.example")
+  (ok (host-bypassed-p "corp.example" '(".corp.example"))
+      "dexador-style suffix still covers the bare domain")
+  (ok (not (host-bypassed-p "evilcorp.example" '("*.corp.example"))))
+  (ok (host-bypassed-p "x.y.z" '("x.?.z")))
+  ;; IP / CIDR (dexador)
+  (ok (host-bypassed-p "127.0.0.1" "127.0.0.1"))
+  (ok (host-bypassed-p "10.1.2.3" "10.0.0.0/8"))
+  (ok (host-bypassed-p "::1" "::1"))
+  (ok (host-bypassed-p "[::1]" "::1"))
+  (ok (host-bypassed-p "fd12:3456::1" "fd00::/8"))
+  (ok (not (host-bypassed-p "2001:db8::1" "fd00::/8")))
+  (let ((cfg (make-http-proxy-config
+              :system nil
+              :proxy "http://proxy:8080"
+              :no-proxy '("*.internal" "10.0.0.0/8"))))
+    (ok (null (resolve-proxy cfg "http://api.internal/")))
+    (ok (null (resolve-proxy cfg "http://10.9.9.9/")))
+    (ok (string= "http://proxy:8080"
+                 (resolve-proxy cfg "http://example.com/")))))
+
 (deftest strip-ipv6-and-format-host-port
   (ok (string= "::1" (strip-ipv6-brackets "[::1]")))
   (ok (string= "[::1]:443" (format-host-port "::1" 443)))

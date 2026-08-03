@@ -171,6 +171,8 @@
            #:resolve-proxy
            #:effective-proxy-config
            #:host-bypassed-p
+           #:normalize-no-proxy
+           #:hostname-matches-pattern-p
            #:strip-ipv6-brackets
            #:format-host-port
            #:parse-proxy-uri

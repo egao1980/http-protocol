@@ -1,3 +1,5 @@
 ql rove
 ql trivial-gray-streams
 ql blackbird
+ql cl-cookie
+ql quri

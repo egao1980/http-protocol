@@ -40,6 +40,7 @@
            #:http-client-backend
            #:http-client-base-url
            #:http-client-headers
+           #:http-client-cookie-jar
            #:http-client-timeout
            #:http-client-max-redirects
            #:http-client-proxy
@@ -54,6 +55,7 @@
            #:http-request-params
            #:http-request-timeout
            #:http-request-max-redirects
+           #:http-request-cookies
            #:http-request-accept-encoding
            #:http-request-content-encoding
            #:http-request-decompress
@@ -67,8 +69,15 @@
            #:response-body
            #:response-url
            #:response-http-version
+           #:response-cookies
+           #:response-history
            #:response-request
            #:response-header
+           #:ensure-cookie-jar
+           #:resolve-cookie-jar
+           #:cookie-header-value
+           #:inject-cookie-header
+           #:merge-response-cookies
            #:backend-name
            #:*http-backend*
            #:*http-client*
@@ -106,5 +115,7 @@
            #:response-body
            #:response-header
            #:response-url
+           #:response-cookies
+           #:response-history
            #:*http-backend*
            #:*http-client*))

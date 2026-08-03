@@ -35,7 +35,7 @@
                :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
                :author "egao1980"
                :depends-on '("trivial-gray-streams" "blackbird" "cl-cookie" "quri"
-                             "babel" "cl-base64")
+                             "babel" "cl-base64" "bordeaux-threads")
                :provides '("http-protocol"
                            "http-protocol/tests"
                            "http-protocol/conformance")))

@@ -15,7 +15,11 @@ Facade package: `http` (`http:get`, `http:request`, …). Protocol package: `htt
 ```lisp
 (asdf:load-system "http-backend-dexador")
 (let ((*http-backend* (http-backend-dexador:make-dexador-backend)))
-  (http:get "https://example.com/"))
+  (http:get "https://example.com/" :params '(("q" . "hi")))
+  (http:post "https://example.com/" :data '(("a" . "1")))  ; urlencoded
+  ;; :files (optional :data) → multipart/form-data
+  (http:post "https://example.com/"
+             :files `(("f" . ,(http:make-http-file #(1 2 3) :filename "x.bin")))))
 ```
 
 **Brief:** [cl-stack `docs/capabilities/http-protocol.md`](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/http-protocol.md)

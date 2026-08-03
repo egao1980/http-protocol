@@ -68,10 +68,11 @@
    (content :initarg :content :accessor http-request-content :initform nil
             :documentation "Raw body: octets / string / binary input stream / http-file.")
    (data :initarg :data :accessor http-request-data :initform nil
-         :documentation "Form fields alist ((name . string|octets)…) for multipart.")
+         :documentation "Form fields alist. Alone → urlencoded; with :files → multipart.")
    (files :initarg :files :accessor http-request-files :initform nil
           :documentation "Multipart files: alist ((name . http-file|stream|octets)…) or list of http-file.")
-   (params :initarg :params :accessor http-request-params :initform nil)
+   (params :initarg :params :accessor http-request-params :initform nil
+           :documentation "Query alist merged into URL via quri before SEND.")
    (timeout :initarg :timeout :accessor http-request-timeout :initform nil
             :documentation "Overrides client; HTTP-TIMEOUT | number | plist.")
    (retry :initarg :retry :accessor http-request-retry :initform nil

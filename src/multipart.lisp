@@ -257,7 +257,12 @@
   "Resolve CONTENT / DATA / FILES → wire body for a backend.
 
    Returns (values wire-content extra-header-alist content-length-or-nil).
-   Wire content is a stream, octet vector, or NIL."
+   Wire content is a stream, octet vector, or NIL.
+
+   Body rules (requests/httpx-shaped):
+   - :FILES (with optional :DATA) → multipart/form-data
+   - :DATA alone (alist) → application/x-www-form-urlencoded
+   - :CONTENT → raw body (octets/string/stream/http-file)"
   (declare (ignore buffer-size))
   (let ((content (http-request-content request))
         (data (http-request-data request))
@@ -267,10 +272,21 @@
       (error 'http-protocol-error
              :message "specify either :content or :data/:files, not both"))
     (cond
-      ((or data files)
+      (files
        (multiple-value-bind (stream ct clen)
            (make-multipart-body data files)
          (values stream (list (cons "content-type" ct)) clen)))
+      (data
+       (let ((octets (etypecase data
+                       (list (encode-urlencoded data))
+                       (string (babel:string-to-octets data :encoding :utf-8))
+                       ((vector (unsigned-byte 8)) data))))
+         (multiple-value-bind (wire ce)
+             (prepare-request-content octets :coding coding)
+           (let ((extra (list (cons "content-type"
+                                    "application/x-www-form-urlencoded"))))
+             (when ce (setf extra (acons "content-encoding" ce extra)))
+             (values wire extra (when (vectorp wire) (length wire)))))))
       ((http-file-p content)
        ;; Single-file body (e.g. PUT): stream content; optional length/type.
        (multiple-value-bind (wire ce)

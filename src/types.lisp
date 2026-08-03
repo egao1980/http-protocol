@@ -14,6 +14,8 @@
    (cookie-jar :initarg :cookie-jar :accessor http-client-cookie-jar
                :initform nil
                :documentation "cl-cookie:cookie-jar (requests Session jar). Lazy-created by backends.")
+   (auth :initarg :auth :accessor http-client-auth :initform nil
+         :documentation "Default :auth — (:basic u p) | (:bearer tok) | string.")
    (timeout :initarg :timeout :accessor http-client-timeout :initform nil)
    (max-redirects :initarg :max-redirects :accessor http-client-max-redirects :initform 5)
    (proxy :initarg :proxy :accessor http-client-proxy :initform nil)
@@ -33,6 +35,10 @@
    (max-redirects :initarg :max-redirects :accessor http-request-max-redirects :initform nil)
    (cookies :initarg :cookies :accessor http-request-cookies :initform nil
             :documentation "Per-request cookies: alist ((name . value)…) merged into jar, or a cookie-jar.")
+   (auth :initarg :auth :accessor http-request-auth :initform nil
+         :documentation "(:basic u p) | (:bearer tok) | string; overrides client auth.")
+   (range :initarg :range :accessor http-request-range :initform nil
+          :documentation "(start end) | (start) | string → Range header.")
    (accept-encoding :initarg :accept-encoding :accessor http-request-accept-encoding
                     :initform :default
                     :documentation "T/:default → available-content-codings; NIL → omit; list/string → use.")

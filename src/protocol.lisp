@@ -2,11 +2,12 @@
 
 ;;; Client protocol generics. Backends specialize SEND / MAKE-HTTP-CLIENT.
 
-(defgeneric make-http-client (backend &key base-url headers cookie-jar timeout
+(defgeneric make-http-client (backend &key base-url headers cookie-jar auth timeout
                                       max-redirects proxy verify
                                       &allow-other-keys)
   (:documentation "Create an HTTP-CLIENT for BACKEND (requests Session shape).
-   COOKIE-JAR defaults to a fresh empty jar when omitted.")
+   COOKIE-JAR defaults to a fresh empty jar when omitted.
+   AUTH defaults to NIL — (:basic u p) | (:bearer tok) | Authorization string.")
   (:method ((backend http-backend) &rest keys
             &key (cookie-jar nil cookie-jar-p) &allow-other-keys)
     (let ((keys* (loop for (k v) on keys by #'cddr

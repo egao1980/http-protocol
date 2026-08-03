@@ -26,11 +26,16 @@
            #:make-octet-input-stream
            #:make-buffered-binary-input-stream
            #:buffered-binary-input-stream
+           #:buffered-stream-source
            #:*http-stream-buffer-size*
            #:copy-stream
            #:prepare-request-content
+           #:prepare-request-body
            #:wrap-response-body-stream
            #:body-stream
+           #:make-multipart-body
+           #:make-multipart-form-stream
+           #:build-multipart-parts
            #:slurp-octets
            #:coerce-to-octets
            #:content-coding-supported-p
@@ -53,6 +58,14 @@
            #:http-client-max-redirects
            #:http-client-proxy
            #:http-client-verify
+           #:http-file
+           #:http-file-p
+           #:make-http-file
+           #:http-file-filename
+           #:http-file-content-type
+           #:http-file-content-length
+           #:http-file-content
+           #:http-file-field-name
            #:http-request
            #:http-request-p
            #:make-http-request
@@ -60,6 +73,8 @@
            #:http-request-url
            #:http-request-headers
            #:http-request-content
+           #:http-request-data
+           #:http-request-files
            #:http-request-params
            #:http-request-timeout
            #:http-request-max-redirects
@@ -87,6 +102,7 @@
            #:response-history
            #:response-request
            #:response-header
+           #:response-as-http-file
            #:ensure-cookie-jar
            #:resolve-cookie-jar
            #:cookie-header-value
@@ -136,6 +152,15 @@
            #:body-stream
            #:stream
            #:stream-async
+           #:http-file
+           #:http-file-p
+           #:make-http-file
+           #:http-file-filename
+           #:http-file-content-type
+           #:http-file-content-length
+           #:http-file-content
+           #:http-file-field-name
+           #:response-as-http-file
            #:*http-stream-buffer-size*
            #:*http-backend*
            #:*http-client*))

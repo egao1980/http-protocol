@@ -25,11 +25,44 @@
 
 (defun http-client-p (x) (typep x 'http-client))
 
+;;; Upload / download file value — stream + metadata. No filesystem.
+;;; Higher layers (pathlib + JSON/MIME) construct these from paths/models.
+
+(defclass http-file ()
+  ((filename :initarg :filename :accessor http-file-filename :initform nil
+             :documentation "Suggested filename for Content-Disposition (string or NIL).")
+   (content-type :initarg :content-type :accessor http-file-content-type
+                 :initform "application/octet-stream")
+   (content-length :initarg :content-length :accessor http-file-content-length
+                   :initform nil
+                   :documentation "Octet length when known (enables Content-Length); else NIL.")
+   (content :initarg :content :accessor http-file-content
+            :documentation "Binary input stream, octet vector, or UTF-8 string.")
+   (field-name :initarg :field-name :accessor http-file-field-name :initform nil
+               :documentation "Optional multipart field name when not supplied by alist key.")))
+
+(defun http-file-p (x) (typep x 'http-file))
+
+(defun make-http-file (content &key filename content-type content-length field-name)
+  "Build an HTTP-FILE. CONTENT must be a stream, octet vector, or string."
+  (check-type content (or stream string vector))
+  (make-instance 'http-file
+                 :content content
+                 :filename filename
+                 :content-type (or content-type "application/octet-stream")
+                 :content-length content-length
+                 :field-name field-name))
+
 (defclass http-request ()
   ((method :initarg :method :accessor http-request-method :initform :get)
    (url :initarg :url :accessor http-request-url)
    (headers :initarg :headers :accessor http-request-headers :initform nil)
-   (content :initarg :content :accessor http-request-content :initform nil)
+   (content :initarg :content :accessor http-request-content :initform nil
+            :documentation "Raw body: octets / string / binary input stream / http-file.")
+   (data :initarg :data :accessor http-request-data :initform nil
+         :documentation "Form fields alist ((name . string|octets)…) for multipart.")
+   (files :initarg :files :accessor http-request-files :initform nil
+          :documentation "Multipart files: alist ((name . http-file|stream|octets)…) or list of http-file.")
    (params :initarg :params :accessor http-request-params :initform nil)
    (timeout :initarg :timeout :accessor http-request-timeout :initform nil)
    (max-redirects :initarg :max-redirects :accessor http-request-max-redirects :initform nil)
@@ -62,7 +95,8 @@
   ((status :initarg :status :reader response-status)
    (headers :initarg :headers :reader response-headers
             :documentation "EQUAL hash-table, lowercase string keys (dexador shape).")
-   (body :initarg :body :reader response-body)
+   (body :initarg :body :reader response-body
+         :documentation "Octets, string, stream, or http-file when wrapped.")
    (url :initarg :url :reader response-url :initform nil)
    (http-version :initarg :http-version :reader response-http-version :initform nil)
    (cookies :initarg :cookies :reader response-cookies :initform nil
@@ -70,6 +104,60 @@
    (history :initarg :history :reader response-history :initform nil
             :documentation "Prior HTTP-RESPONSE objects in a redirect chain.")
    (request :initarg :request :reader response-request :initform nil)))
+
+(defun %unquote-disposition-token (raw)
+  (let ((raw (string-trim '(#\Space #\Tab) raw)))
+    (cond
+      ((and (>= (length raw) 2)
+            (char= (char raw 0) #\")
+            (char= (char raw (1- (length raw))) #\"))
+       (subseq raw 1 (1- (length raw))))
+      ((plusp (length raw)) raw))))
+
+(defun %disposition-param-value (header start)
+  (let* ((rest (subseq header start))
+         (end (or (position #\; rest) (length rest))))
+    (%unquote-disposition-token (subseq rest 0 end))))
+
+(defun %content-disposition-filename (header)
+  "Parse filename= / filename*= from a Content-Disposition header value."
+  (when (and header (stringp header))
+    (let ((star (search "filename*=" header :test #'char-equal)))
+      (when star
+        (let ((raw (%disposition-param-value header (+ star (length "filename*=")))))
+          (when raw
+            ;; RFC 5987: charset'lang'value
+            (let ((q (position #\' raw :from-end t)))
+              (return-from %content-disposition-filename
+                (if q
+                    (or (ignore-errors (quri:url-decode (subseq raw (1+ q))))
+                        (subseq raw (1+ q)))
+                    raw)))))))
+    ;; Match filename= but not the filename= prefix of filename*=
+    (loop with from = 0
+          for pos = (search "filename=" header :start2 from :test #'char-equal)
+          while pos
+          for name-end = (+ pos (length "filename"))
+          do (if (and (< name-end (length header))
+                      (char= (char header name-end) #\*))
+                 (setf from (1+ pos))
+                 (return (%disposition-param-value
+                          header (+ pos (length "filename="))))))))
+
+(defun response-as-http-file (response &key filename content-type)
+  "Wrap RESPONSE body as an HTTP-FILE (stream when :want-stream was used).
+
+   FILENAME defaults to Content-Disposition filename when present."
+  (make-http-file (or (response-body response) #())
+                  :filename (or filename
+                                (%content-disposition-filename
+                                 (response-header response "content-disposition")))
+                  :content-type (or content-type
+                                    (response-header response "content-type")
+                                    "application/octet-stream")
+                  :content-length
+                  (let ((cl (response-header response "content-length")))
+                    (when cl (ignore-errors (parse-integer cl :junk-allowed t))))))
 
 (defun http-response-p (x) (typep x 'http-response))
 

@@ -350,31 +350,31 @@
 
 (defgeneric load-proxy-system (config &key fetch)
   (:documentation
-   "3. System proxy discovery (all OS-provided sources):
-      - unix-like env: https_proxy / http_proxy / all_proxy / no_proxy
-      - Windows registry / WinINet (specialize — or set SYSTEM-AUTOMATIC-P)
-      - OS PAC / WPAD (specialize; optional :FETCH for script download)
+   "3. System proxy discovery. Precedence: env > registry / PAC / WPAD.
+      - env: https_proxy / http_proxy / all_proxy / no_proxy (all OS)
+      - then platform: Windows registry / WinINet / PAC / WPAD
 
     Does not override an already-set manual PROXY.
+    Platform must not override env-seeded proxy/no-proxy.
     Only runs when PROXY-CONFIG-USE-SYSTEM-PROXY is true.")
   (:method ((config http-proxy-config) &key fetch)
     (declare (ignore fetch))
     (unless (proxy-config-use-system-proxy config)
       (return-from load-proxy-system config))
-    ;; Env is portable "system" config (same class as registry on Windows).
+    ;; 1. Environment (wins over registry/PAC).
     (unless (proxy-config-proxy config)
       (setf (proxy-config-proxy config) (environment-proxy-alist)))
     (unless (proxy-config-no-proxy config)
       (setf (proxy-config-no-proxy config) (environment-no-proxy)))
-    ;; Platform hook: Windows specialization fills registry / sets
-    ;; SYSTEM-AUTOMATIC-P / SCRIPT-URL from WinINet. Default: done.
+    ;; 2. Platform residual (registry static / flag PAC → SYSTEM-AUTOMATIC-P).
     (load-proxy-system-platform config)
     config))
 
 (defgeneric load-proxy-system-platform (config &key)
   (:documentation
    "Platform part of LOAD-PROXY-SYSTEM (registry / WPAD). Default no-op.
-    Specialize on Windows to set SYSTEM-AUTOMATIC-P or concrete PROXY.")
+    Specialize on Windows to set SYSTEM-AUTOMATIC-P or concrete PROXY.
+    Must not override proxy/no-proxy already set from environment.")
   (:method ((config http-proxy-config) &key)
     (declare (ignore config))
     nil))
@@ -390,6 +390,29 @@
     (error 'unsupported-operation
            :operation 'evaluate-proxy-script
            :message "PAC evaluation not implemented; use system automatic proxy or a static proxy")))
+
+(defgeneric resolve-system-proxy-platform (config uri)
+  (:documentation
+   "Platform residual after env for SYSTEM discovery → URL | NIL | :SYSTEM.
+    Default NIL (direct). Windows: :SYSTEM when PAC/WPAD/WinHTTP AUTOMATIC.")
+  (:method ((config http-proxy-config) uri)
+    (declare (ignore config uri))
+    nil))
+
+(defun resolve-system-proxy (config uri)
+  "System discovery for URI (dexador#202 precedence):
+     1. environment (http(s)_proxy / all_proxy / no_proxy) — all OS
+     2. registry / PAC / WPAD — platform (may yield :SYSTEM for the backend)
+   Returns proxy URL string, NIL (direct), or :SYSTEM."
+  (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
+         (host (quri:uri-host u))
+         (scheme (quri:uri-scheme u))
+         ;; Env NO_PROXY applies even when config snapshot omitted it.
+         (no (or (proxy-config-no-proxy config) (environment-no-proxy))))
+    (when (host-bypassed-p host no)
+      (return-from resolve-system-proxy nil))
+    (or (select-proxy scheme host (environment-proxy-alist))
+        (resolve-system-proxy-platform config u))))
 
 (defgeneric coerce-proxy-config (x)
   (:documentation "Normalize X → HTTP-PROXY-CONFIG.")
@@ -412,7 +435,9 @@
    "Method on HTTP-PROXY-CONFIG: at most one proxy for URI (requests/urllib3).
       - string → proxy URL
       - NIL → direct (also NO_PROXY)
-      - :SYSTEM → OS automatic (registry/PAC/WPAD); backend must honor")
+      - :SYSTEM → residual OS automatic after env (registry/PAC/WPAD); backend must honor
+
+    Order: manual/config proxy → manual PAC script → system (env > registry/PAC).")
   (:method ((config http-proxy-config) uri)
     (let* ((u (if (typep uri 'quri:uri) uri (quri:uri uri)))
            (host (quri:uri-host u)))
@@ -426,7 +451,7 @@
                                    :script (proxy-config-script-text config)))
           (when (and (proxy-config-use-system-proxy config)
                      (proxy-config-system-automatic-p config))
-            :system))))
+            (resolve-system-proxy config u)))))
   (:method ((proxy string) uri)
     (resolve-proxy (coerce-proxy-config proxy) uri))
   (:method ((proxy list) uri)
@@ -455,7 +480,13 @@
                              (normalize-proxy (proxy-config-proxy config)))
                             (when (and (proxy-config-use-system-proxy config)
                                        (proxy-config-system-automatic-p config))
-                              :system))))))
+                              ;; env > registry/PAC (same as RESOLVE-SYSTEM-PROXY)
+                              (or (select-proxy scheme host
+                                                (environment-proxy-alist))
+                                  (resolve-system-proxy-platform
+                                   config
+                                   (quri:make-uri :scheme scheme :host host
+                                                  :path "/")))))))))
       (cond
         ((null proxy) nil)
         ((eq proxy :system) (values :system nil nil))

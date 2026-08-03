@@ -17,6 +17,7 @@
                (:file "timeout")
                (:file "retry")
                (:file "proxy")
+               (:file "proxy-windows")
                (:file "pool")
                (:file "pooled-stream")
                (:file "body")

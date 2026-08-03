@@ -167,6 +167,10 @@
            #:load-proxy-system
            #:load-proxy-system-platform
            #:evaluate-proxy-script
+           #:resolve-system-proxy
+           #:resolve-system-proxy-platform
+           #:parse-windows-proxy-server
+           #:parse-windows-proxy-override
            #:coerce-proxy-config
            #:resolve-proxy
            #:proxy-next-hop

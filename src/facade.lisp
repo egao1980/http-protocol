@@ -1,19 +1,20 @@
 (in-package #:http)
 
 ;;; Thin httpx-shaped helpers (API.md facade layer).
+;;; Bodies are streams / octets / strings — no filesystem.
 
 (defun request (method url &rest keys
                 &key (backend http-protocol:*http-backend*)
                   (client nil clientp)
-                  headers content params timeout max-redirects cookies
+                  headers content data files params timeout max-redirects cookies
                   auth range
                   accept-encoding content-encoding
                   (decompress t) (force-binary t) want-stream
                   raise-for-status
                 &allow-other-keys)
   "Sync HTTP request. Uses *HTTP-BACKEND* / *HTTP-CLIENT* when not supplied.
-   :AUTH (:basic u p) | (:bearer tok); :RANGE (start end) → Range header."
-  (declare (ignore headers content params timeout max-redirects cookies
+   :CONTENT stream|octets|string; :DATA/:FILES → multipart (stream-backed parts)."
+  (declare (ignore headers content data files params timeout max-redirects cookies
                    auth range
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
@@ -57,15 +58,14 @@
 (defun request-async (method url &rest keys
                       &key (backend http-protocol:*http-backend*)
                         (client nil clientp)
-                        headers content params timeout max-redirects cookies
+                        headers content data files params timeout max-redirects cookies
                         auth range
                         accept-encoding content-encoding
                         (decompress t) (force-binary t) want-stream
                         raise-for-status
                       &allow-other-keys)
-  "Async HTTP request → Blackbird promise of HTTP-RESPONSE.
-   Requires a backend that implements SEND-ASYNC (event-protocol path)."
-  (declare (ignore headers content params timeout max-redirects cookies
+  "Async HTTP request → Blackbird promise of HTTP-RESPONSE."
+  (declare (ignore headers content data files params timeout max-redirects cookies
                    auth range
                    accept-encoding content-encoding decompress force-binary
                    want-stream raise-for-status))
@@ -124,13 +124,11 @@
   (apply #'request :connect url keys))
 
 (defun stream (method url &rest keys &key &allow-other-keys)
-  "Sync request with :WANT-STREAM T. RESPONSE-BODY / BODY-STREAM is a buffered
-   binary input stream (O(buffer) memory). METHOD as in REQUEST."
+  "Sync request with :WANT-STREAM T. Body is a buffered binary input stream."
   (apply #'request method url :want-stream t keys))
 
 (defun stream-async (method url &rest keys &key &allow-other-keys)
-  "Async request with :WANT-STREAM T → promise of HTTP-RESPONSE.
-   Backends without true streaming may signal UNSUPPORTED-OPERATION."
+  "Async request with :WANT-STREAM T → promise of HTTP-RESPONSE."
   (apply #'request-async method url :want-stream t keys))
 
 (defmacro with-client ((var &rest client-keys) &body body)

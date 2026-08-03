@@ -21,23 +21,25 @@
                  s
                  (make-buffered-binary-input-stream
                   s :buffer-size buffer-size)))
+           (unwrap (x)
+             (if (http-file-p x) (http-file-content x) x))
            (as-wire (x)
-             (etypecase x
-               (null nil)
-               (stream (bufferize x))
-               ((or string vector)
-                ;; Small / already-materialized payloads stay vectors.
-                (coerce-to-octets x)))))
+             (let ((x (unwrap x)))
+               (etypecase x
+                 (null nil)
+                 (stream (bufferize x))
+                 ((or string vector) (coerce-to-octets x))))))
     (if (null coding)
         (values (as-wire content) nil)
         (let* ((c (normalize-content-coding coding))
                (header (string-downcase (symbol-name c)))
-               (src (etypecase content
+               (raw (unwrap content))
+               (src (etypecase raw
                       (null (make-octet-input-stream
                              (make-array 0 :element-type '(unsigned-byte 8))))
-                      (stream content)
+                      (stream raw)
                       ((or string vector)
-                       (make-octet-input-stream (coerce-to-octets content)))))
+                       (make-octet-input-stream (coerce-to-octets raw)))))
                (encoded (encode-content-coding c src)))
           (values (if (streamp encoded)
                       (bufferize encoded)
@@ -77,9 +79,12 @@
   "Binary input stream over RESPONSE body.
 
    If the body is already a stream, return it (buffer-wrap if bare).
+   If the body is an HTTP-FILE, stream its content.
    If the body is an octet vector, wrap with MAKE-OCTET-INPUT-STREAM
    (materialized case — prefer :WANT-STREAM T on the request for large bodies)."
   (let ((body (response-body response)))
+    (when (http-file-p body)
+      (setf body (http-file-content body)))
     (cond
       ((null body)
        (make-octet-input-stream
@@ -92,6 +97,8 @@
                                               :close-source-p nil)))
       ((vectorp body)
        (make-octet-input-stream body))
+      ((stringp body)
+       (make-octet-input-stream (coerce-to-octets body)))
       (t
        (error 'http-protocol-error
               :message (format nil "response body is not streamable: ~A"

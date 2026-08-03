@@ -68,7 +68,11 @@
    (content :initarg :content :accessor http-request-content :initform nil
             :documentation "Raw body: octets / string / binary input stream / http-file.")
    (data :initarg :data :accessor http-request-data :initform nil
-         :documentation "Form fields alist. Alone → urlencoded; with :files → multipart.")
+         :documentation "Typed application payload; serialized by ENCODE-HTTP-DATA.")
+   (data-type :initarg :data-type :accessor http-request-data-type :initform :auto
+              :documentation "Encode type for :data — :auto|:text|:octets|:urlencoded|:json|media-type.")
+   (form-data :initarg :form-data :accessor http-request-form-data :initform nil
+              :documentation "HTML form fields alist. Alone → urlencoded; with :files → multipart.")
    (files :initarg :files :accessor http-request-files :initform nil
           :documentation "Multipart files: alist ((name . http-file|stream|octets)…) or list of http-file.")
    (params :initarg :params :accessor http-request-params :initform nil

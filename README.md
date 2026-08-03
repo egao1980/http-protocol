@@ -16,8 +16,12 @@ Facade package: `http` (`http:get`, `http:request`, …). Protocol package: `htt
 (asdf:load-system "http-backend-dexador")
 (let ((*http-backend* (http-backend-dexador:make-dexador-backend)))
   (http:get "https://example.com/" :params '(("q" . "hi")))
-  (http:post "https://example.com/" :data '(("a" . "1")))  ; urlencoded
-  ;; :files (optional :data) → multipart/form-data
+  (http:post "https://example.com/" :form-data '(("a" . "1")))  ; urlencoded
+  (http:post "https://example.com/" :data "hello" :data-type :text)
+  ;; typed JSON (no hard JSON dep — bind a codec)
+  (http:with-data-codec (:json :encoder #'my-encode :decoder #'my-decode)
+    (http:post "https://example.com/" :data ht :data-type :json)
+    (http:response-data (http:get "https://example.com/") :json))
   (http:post "https://example.com/"
              :files `(("f" . ,(http:make-http-file #(1 2 3) :filename "x.bin")))))
 ```

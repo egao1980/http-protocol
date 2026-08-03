@@ -13,7 +13,7 @@
                              :content-length 3
                              :field-name "photos"))
          (req (make-http-request :url "http://x"
-                                 :data '(("title" . "hi"))
+                                 :form-data '(("title" . "hi"))
                                  :files (list f1 f2))))
     (multiple-value-bind (stream extra clen)
         (prepare-request-body req)

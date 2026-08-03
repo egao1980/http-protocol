@@ -8,8 +8,8 @@
   (ok (equalp (coerce-to-octets "foo=bar")
               (encode-urlencoded '((:foo . "bar"))))))
 
-(deftest prepare-body-urlencoded-data-only
-  (let ((req (make-http-request :url "http://x" :data '(("q" . "hi there")))))
+(deftest prepare-body-urlencoded-form-data
+  (let ((req (make-http-request :url "http://x" :form-data '(("q" . "hi there")))))
     (multiple-value-bind (wire extra clen)
         (prepare-request-body req)
       (ok (equalp (coerce-to-octets "q=hi+there") wire))
@@ -18,12 +18,12 @@
       (ok (= clen (length wire))))))
 
 (deftest prepare-body-multipart-when-files
-  " :data + :files still multipart (not urlencoded)."
+  " :form-data + :files still multipart (not urlencoded)."
   (let* ((f (make-http-file (coerce-to-octets "x")
                             :filename "x.bin"
                             :content-length 1))
          (req (make-http-request :url "http://x"
-                                 :data '(("title" . "hi"))
+                                 :form-data '(("title" . "hi"))
                                  :files `(("upload" . ,f)))))
     (multiple-value-bind (stream extra clen)
         (prepare-request-body req)
@@ -45,7 +45,6 @@
     (ok (string= "http://ex.com/search?q=a%20b&page=2"
                  (finalize-request-url! req)))
     (ok (null (http-request-params req)))
-    ;; Idempotent second call
     (ok (string= "http://ex.com/search?q=a%20b&page=2"
                  (finalize-request-url! req)))))
 

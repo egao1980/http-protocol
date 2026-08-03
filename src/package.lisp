@@ -37,6 +37,16 @@
            #:encode-urlencoded
            #:apply-request-params
            #:finalize-request-url!
+           #:encode-http-data
+           #:decode-http-data
+           #:response-data
+           #:*data-serializers*
+           #:*data-deserializers*
+           #:*json-encoder*
+           #:*json-decoder*
+           #:with-data-serializer
+           #:with-data-deserializer
+           #:with-data-codec
            #:make-multipart-body
            #:make-multipart-form-stream
            #:build-multipart-parts
@@ -82,6 +92,8 @@
            #:http-request-headers
            #:http-request-content
            #:http-request-data
+           #:http-request-data-type
+           #:http-request-form-data
            #:http-request-files
            #:http-request-params
            #:http-request-timeout
@@ -237,6 +249,7 @@
            #:response-status
            #:response-headers
            #:response-body
+           #:response-data
            #:response-header
            #:response-url
            #:response-cookies
@@ -253,6 +266,9 @@
            #:http-file-content
            #:http-file-field-name
            #:response-as-http-file
+           #:with-data-serializer
+           #:with-data-deserializer
+           #:with-data-codec
            #:*http-stream-buffer-size*
            #:*http-backend*
            #:*http-client*))

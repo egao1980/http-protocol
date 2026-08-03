@@ -1,5 +1,5 @@
 (defsystem "http-protocol"
-  :version "0.1.1"
+  :version "0.2.0"
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
@@ -22,6 +22,7 @@
                (:file "pooled-stream")
                (:file "body")
                (:file "form")
+               (:file "serdes")
                (:file "multipart")
                (:file "auth")
                (:file "cookies")
@@ -38,6 +39,7 @@
                (:file "body-stream-test")
                (:file "multipart-test")
                (:file "form-test")
+               (:file "serdes-test")
                (:file "content-disposition-test")
                (:file "facade-test")
                (:file "auth-test")

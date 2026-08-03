@@ -30,25 +30,29 @@
 (defclass http-proxy-config ()
   ((proxy :initarg :proxy :accessor proxy-config-proxy
           :initform nil
-          :documentation "NIL | URL string | alist of scheme / scheme://host / \"*\" → URL.")
+          :documentation "Manual static proxy: NIL | URL string | scheme/host alist.")
    (no-proxy :initarg :no-proxy :accessor proxy-config-no-proxy
              :initform nil
              :documentation "Comma/space string or list of NO_PROXY patterns.")
    (use-system-proxy :initarg :use-system-proxy :accessor proxy-config-use-system-proxy
                      :initform t
-                     :documentation "Allow LOAD-PROXY-SYSTEM / OS automatic resolution.")
+                     :documentation "Allow LOAD-PROXY-SYSTEM when resolving.")
    (system-automatic-p :initarg :system-automatic-p
                        :accessor proxy-config-system-automatic-p
                        :initform nil
                        :documentation
-                       "When T and no static PROXY, RESOLVE-PROXY may return :SYSTEM
-                        (backend uses OS resolution — WinHTTP AUTOMATIC / registry+PAC+WPAD).")
+                       "When T and no static PROXY/script hit, RESOLVE-PROXY → :SYSTEM
+                        (backend uses OS resolution — WinHTTP AUTOMATIC).")
    (script-url :initarg :script-url :accessor proxy-config-script-url :initform nil
-               :documentation "PAC script URL when known.")
+               :documentation "Manual PAC URL (CONFIGURE-PROXY-SCRIPT), not system WPAD.")
    (script-text :initarg :script-text :accessor proxy-config-script-text :initform nil
-                :documentation "Cached PAC body (from LOAD-PROXY-SCRIPT)."))
+                :documentation "Cached manual PAC body."))
   (:documentation
-   "Proxy resolution policy. Populate via LOAD-PROXY-* methods, then RESOLVE-PROXY."))
+   "Proxy policy. Three ways to populate:
+      1. CONFIGURE-PROXY — manual URL/alist
+      2. CONFIGURE-PROXY-SCRIPT — manual PAC
+      3. LOAD-PROXY-SYSTEM — env vars + Windows registry + OS PAC/WPAD
+    Then RESOLVE-PROXY."))
 
 (defun http-proxy-config-p (x) (typep x 'http-proxy-config))
 
@@ -58,8 +62,9 @@
                                  (system-automatic-p nil)
                                  (script-url nil)
                                  (script-text nil)
-                                 (from-environment t))
-  "Build HTTP-PROXY-CONFIG. When FROM-ENVIRONMENT and slots omitted, call LOAD-PROXY-ENVIRONMENT."
+                                 (system t))
+  "Build HTTP-PROXY-CONFIG.
+   :PROXY / :NO-PROXY → manual. :SYSTEM T (default when no manual proxy) → LOAD-PROXY-SYSTEM."
   (let ((cfg (make-instance 'http-proxy-config
                             :proxy (if proxy-p proxy nil)
                             :no-proxy (if no-proxy-p no-proxy nil)
@@ -67,22 +72,22 @@
                             :system-automatic-p system-automatic-p
                             :script-url script-url
                             :script-text script-text)))
-    (when (and from-environment (not proxy-p) (not no-proxy-p))
-      (load-proxy-environment cfg))
-    (when (and proxy-p (not no-proxy-p) from-environment)
-      (setf (proxy-config-no-proxy cfg) (or (proxy-config-no-proxy cfg)
-                                            (environment-no-proxy))))
+    (when (and system (not proxy-p) (null script-url) (null script-text))
+      (load-proxy-system cfg))
+    (when (and proxy-p (not no-proxy-p) system)
+      ;; Manual proxy still inherits system no_proxy when omitted.
+      (setf (proxy-config-no-proxy cfg)
+            (or (proxy-config-no-proxy cfg) (environment-no-proxy))))
     cfg))
 
 (defvar *default-proxy-config* nil
-  "Default proxy config. Lazily (LOAD-PROXY) from environment (+ system when available).")
+  "Default proxy config. Lazily LOAD-PROXY-SYSTEM.")
 
 (defun ensure-default-proxy-config ()
   (or *default-proxy-config*
       (setf *default-proxy-config*
-            (load-proxy (make-http-proxy-config :from-environment nil)
-                        :environment t :system t))))
-(defun strip-ipv6-brackets (host)
+            (load-proxy-system
+             (make-http-proxy-config :system nil)))))(defun strip-ipv6-brackets (host)
   "Strip RFC 2732 brackets: \"[::1]\" → \"::1\"."
   (if (and (stringp host) (plusp (length host)) (char= (char host 0) #\[))
       (let ((close (position #\] host)))
@@ -234,114 +239,112 @@
              (assoc "all" proxy-alist :test #'string-equal)))))
 
 ;;; ---------------------------------------------------------------------------
-;;; Discovery sources (few methods). Compose with LOAD-PROXY.
-;;; Priority when composing: command-line > environment > system > script.
+;;; Three configuration modes:
+;;;   1. CONFIGURE-PROXY        — manual URL / alist
+;;;   2. CONFIGURE-PROXY-SCRIPT — manual PAC (user-supplied)
+;;;   3. LOAD-PROXY-SYSTEM      — env vars + Windows registry + OS PAC/WPAD
 ;;; ---------------------------------------------------------------------------
 
-(defgeneric load-proxy-environment (config &key)
+(defgeneric configure-proxy (config &key proxy no-proxy)
   (:documentation
-   "Unix-like env: https_proxy / http_proxy / all_proxy / no_proxy (and uppercase).
-    Mutates CONFIG; returns CONFIG.")
-  (:method ((config http-proxy-config) &key)
-    (setf (proxy-config-proxy config) (environment-proxy-alist)
-          (proxy-config-no-proxy config) (environment-no-proxy))
+   "1. Manual static proxy. PROXY = URL string or scheme/host alist.
+    NO-PROXY optional. Clears SYSTEM-AUTOMATIC-P / manual script slots.")
+  (:method ((config http-proxy-config) &key (proxy nil proxy-p)
+                                         (no-proxy nil no-proxy-p))
+    (when proxy-p
+      (setf (proxy-config-proxy config) proxy
+            (proxy-config-system-automatic-p config) nil
+            (proxy-config-script-url config) nil
+            (proxy-config-script-text config) nil))
+    (when no-proxy-p
+      (setf (proxy-config-no-proxy config) no-proxy))
     config))
 
-(defgeneric load-proxy-system (config &key)
+(defgeneric configure-proxy-script (config &key url text fetch)
   (:documentation
-   "OS / registry / WinINet automatic proxy (PAC + WPAD on Windows).
+   "2. Manual PAC script (user-supplied, not OS WPAD).
 
-    Default method: no-op (returns CONFIG unchanged). A Windows specialization
-    should either:
-      - fill PROXY / NO-PROXY / SCRIPT-URL from the registry, or
-      - set SYSTEM-AUTOMATIC-P so RESOLVE-PROXY returns :SYSTEM and the
-        usocket/WinHTTP backend lets the OS resolve per request.
+    Provide :TEXT, or :URL with :FETCH (lambda (url) → string) — typically
+    usocket/async GET. Clears static PROXY; evaluation via EVALUATE-PROXY-SCRIPT.")
+  (:method ((config http-proxy-config) &key url text fetch)
+    (setf (proxy-config-proxy config) nil
+          (proxy-config-system-automatic-p config) nil)
+    (when url
+      (setf (proxy-config-script-url config) url))
+    (cond
+      (text
+       (setf (proxy-config-script-text config) text))
+      ((or url (proxy-config-script-url config))
+       (let ((u (or url (proxy-config-script-url config))))
+         (unless fetch
+           (error 'unsupported-operation
+                  :operation 'configure-proxy-script
+                  :message "CONFIGURE-PROXY-SCRIPT with :URL needs :FETCH or :TEXT"))
+         (setf (proxy-config-script-url config) u
+               (proxy-config-script-text config) (funcall fetch u))))
+      (t
+       (error 'http-protocol-error
+              :message "CONFIGURE-PROXY-SCRIPT needs :TEXT or :URL")))
+    config))
 
+(defgeneric load-proxy-system (config &key fetch)
+  (:documentation
+   "3. System proxy discovery (all OS-provided sources):
+      - unix-like env: https_proxy / http_proxy / all_proxy / no_proxy
+      - Windows registry / WinINet (specialize — or set SYSTEM-AUTOMATIC-P)
+      - OS PAC / WPAD (specialize; optional :FETCH for script download)
+
+    Does not override an already-set manual PROXY.
     Only runs when PROXY-CONFIG-USE-SYSTEM-PROXY is true.")
-  (:method ((config http-proxy-config) &key)
-    (when (proxy-config-use-system-proxy config)
-      ;; Portable default: nothing to read. Windows module specializes.
-      nil)
+  (:method ((config http-proxy-config) &key fetch)
+    (declare (ignore fetch))
+    (unless (proxy-config-use-system-proxy config)
+      (return-from load-proxy-system config))
+    ;; Env is portable "system" config (same class as registry on Windows).
+    (unless (proxy-config-proxy config)
+      (setf (proxy-config-proxy config) (environment-proxy-alist)))
+    (unless (proxy-config-no-proxy config)
+      (setf (proxy-config-no-proxy config) (environment-no-proxy)))
+    ;; Platform hook: Windows specialization fills registry / sets
+    ;; SYSTEM-AUTOMATIC-P / SCRIPT-URL from WinINet. Default: done.
+    (load-proxy-system-platform config)
     config))
 
-(defgeneric load-proxy-script (config &key url fetch)
+(defgeneric load-proxy-system-platform (config &key)
   (:documentation
-   "Load a PAC script into CONFIG.
-
-    URL defaults to PROXY-CONFIG-SCRIPT-URL.
-    FETCH is (lambda (url) → string) — typically an HTTP GET over usocket
-    (or the async backend). Mutates SCRIPT-URL / SCRIPT-TEXT; returns CONFIG.
-
-    Does not evaluate the script; see EVALUATE-PROXY-SCRIPT / RESOLVE-PROXY.")
-  (:method ((config http-proxy-config) &key url fetch)
-    (let ((url (or url (proxy-config-script-url config))))
-      (unless url
-        (return-from load-proxy-script config))
-      (setf (proxy-config-script-url config) url)
-      (unless fetch
-        (error 'unsupported-operation
-               :operation 'load-proxy-script
-               :message "LOAD-PROXY-SCRIPT requires :FETCH (url → PAC text)"))
-      (setf (proxy-config-script-text config) (funcall fetch url))
-      config)))
+   "Platform part of LOAD-PROXY-SYSTEM (registry / WPAD). Default no-op.
+    Specialize on Windows to set SYSTEM-AUTOMATIC-P or concrete PROXY.")
+  (:method ((config http-proxy-config) &key)
+    (declare (ignore config))
+    nil))
 
 (defgeneric evaluate-proxy-script (config uri &key script)
   (:documentation
    "Evaluate PAC FindProxyForURL for URI → proxy URL string or NIL (DIRECT).
 
-    Default: unsupported-operation (PAC needs a JS engine or OS resolver).
-    Prefer LOAD-PROXY-SYSTEM + SYSTEM-AUTOMATIC-P on Windows; specialize
-    here when shipping an explicit PAC evaluator.")
+    Used for manual scripts (CONFIGURE-PROXY-SCRIPT). Default: unsupported —
+    on Windows prefer LOAD-PROXY-SYSTEM + SYSTEM-AUTOMATIC-P.")
   (:method ((config http-proxy-config) uri &key script)
     (declare (ignore uri script))
     (error 'unsupported-operation
            :operation 'evaluate-proxy-script
            :message "PAC evaluation not implemented; use system automatic proxy or a static proxy")))
 
-(defgeneric load-proxy (config &key environment system script script-url fetch)
-  (:documentation
-   "Compose discovery sources onto CONFIG (mutates, returns CONFIG).
-
-    Order:
-      1. environment (unix-like vars) — skipped if PROXY already set
-      2. system (registry / WinINet automatic)
-      3. script (PAC fetch via :FETCH)
-
-    Programmatic proxy: set PROXY-CONFIG-PROXY / :PROXY on the client — no
-    separate loader. Typical startup:
-      (load-proxy (make-http-proxy-config :from-environment nil)
-                  :environment t :system t)")
-  (:method ((config http-proxy-config)
-            &key (environment t) system script script-url fetch)
-    (when environment
-      (let ((had-proxy (proxy-config-proxy config))
-            (had-no (proxy-config-no-proxy config)))
-        (load-proxy-environment config)
-        (when had-proxy
-          (setf (proxy-config-proxy config) had-proxy))
-        (when had-no
-          (setf (proxy-config-no-proxy config) had-no))))
-    (when system
-      (load-proxy-system config))
-    (when (or script script-url)
-      (load-proxy-script config :url script-url :fetch fetch))
-    config))
-
 (defgeneric coerce-proxy-config (x)
   (:documentation "Normalize X → HTTP-PROXY-CONFIG.")
   (:method ((x http-proxy-config)) x)
   (:method ((x null))
-    (make-http-proxy-config :proxy nil :no-proxy nil :from-environment nil))
+    (make-http-proxy-config :proxy nil :no-proxy nil :system nil))
   (:method ((x string))
     (make-http-proxy-config
      :proxy x
      :no-proxy (proxy-config-no-proxy (ensure-default-proxy-config))
-     :from-environment nil))
+     :system nil))
   (:method ((x list))
     (make-http-proxy-config
      :proxy x
      :no-proxy (proxy-config-no-proxy (ensure-default-proxy-config))
-     :from-environment nil)))
+     :system nil)))
 
 (defgeneric resolve-proxy (config uri)
   (:documentation

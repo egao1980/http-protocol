@@ -26,7 +26,7 @@
 
 (deftest resolve-proxy-alist-specificity
   (let* ((cfg (make-http-proxy-config
-               :from-environment nil
+               :system nil
                :proxy '(("https://internal.git" . "http://10.0.0.1:3128/")
                         ("https" . "http://https-proxy:8080/")
                         ("*" . "http://all-proxy:8080/"))
@@ -40,7 +40,7 @@
 
 (deftest no-proxy-hostname-and-cidr
   (let ((cfg (make-http-proxy-config
-              :from-environment nil
+              :system nil
               :proxy "http://proxy:8080"
               :no-proxy "localhost, .corp.example, 10.0.0.0/8, ::1")))
     (ok (null (resolve-proxy cfg "http://localhost/")))
@@ -69,8 +69,16 @@
                (resolve-proxy (coerce-proxy-config "http://p")
                               "https://example.com"))))
 
-(deftest load-proxy-environment-method
-  (let ((cfg (make-http-proxy-config :from-environment nil)))
+(deftest configure-proxy-manual
+  (let ((cfg (make-http-proxy-config :system nil)))
+    (configure-proxy cfg :proxy "http://manual:8080" :no-proxy "localhost")
+    (ok (string= "http://manual:8080"
+                 (resolve-proxy cfg "http://example.com/")))
+    (ok (null (resolve-proxy cfg "http://localhost/")))))
+
+(deftest load-proxy-system-includes-environment
+  "System discovery includes unix env vars."
+  (let ((cfg (make-http-proxy-config :system nil)))
     (with-env (("https_proxy" "http://env-proxy:8080")
                ("HTTPS_PROXY" nil)
                ("http_proxy" nil)
@@ -79,14 +87,14 @@
                ("ALL_PROXY" nil)
                ("no_proxy" "localhost")
                ("NO_PROXY" nil))
-      (load-proxy-environment cfg)
+      (load-proxy-system cfg)
       (ok (string= "http://env-proxy:8080"
                    (resolve-proxy cfg "https://example.com/")))
       (ok (null (resolve-proxy cfg "http://localhost/"))))))
 
-(deftest programmatic-proxy-not-clobbered-by-environment
-  (let ((cfg (make-http-proxy-config :from-environment nil
-                                     :proxy "http://explicit:9")))
+(deftest manual-proxy-not-clobbered-by-system
+  (let ((cfg (make-http-proxy-config :system nil)))
+    (configure-proxy cfg :proxy "http://explicit:9")
     (with-env (("http_proxy" "http://env:1")
                ("HTTP_PROXY" nil)
                ("https_proxy" nil)
@@ -95,22 +103,24 @@
                ("ALL_PROXY" nil)
                ("no_proxy" nil)
                ("NO_PROXY" nil))
-      (load-proxy cfg :environment t :system nil)
+      (load-proxy-system cfg)
       (ok (string= "http://explicit:9"
                    (resolve-proxy cfg "http://example.com/"))))))
 
 (deftest resolve-proxy-system-automatic
-  (let ((cfg (make-http-proxy-config :from-environment nil
+  (let ((cfg (make-http-proxy-config :system nil
                                      :system-automatic-p t)))
     (ok (eq :system (resolve-proxy cfg "http://example.com/")))
     (setf (proxy-config-no-proxy cfg) "example.com")
     (ok (null (resolve-proxy cfg "http://example.com/")))))
 
-(deftest load-proxy-script-requires-fetch
-  (let ((cfg (make-http-proxy-config :from-environment nil
-                                     :script-url "http://wpad/wpad.dat")))
-    (ok (signals (load-proxy-script cfg) 'unsupported-operation))
-    (load-proxy-script cfg :fetch (lambda (u)
-                                    (ok (string= "http://wpad/wpad.dat" u))
-                                    "PAC"))
-    (ok (string= "PAC" (proxy-config-script-text cfg)))))
+(deftest configure-proxy-script-manual
+  (let ((cfg (make-http-proxy-config :system nil)))
+    (ok (signals (configure-proxy-script cfg :url "http://wpad/wpad.dat")
+                 'unsupported-operation))
+    (configure-proxy-script cfg :url "http://pac.example/x.pac"
+                            :fetch (lambda (u)
+                                     (ok (string= "http://pac.example/x.pac" u))
+                                     "PAC"))
+    (ok (string= "PAC" (proxy-config-script-text cfg)))
+    (ok (null (proxy-config-proxy cfg)))))

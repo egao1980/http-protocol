@@ -162,11 +162,11 @@
            #:proxy-config-script-text
            #:*default-proxy-config*
            #:ensure-default-proxy-config
-           #:load-proxy-environment
+           #:configure-proxy
+           #:configure-proxy-script
            #:load-proxy-system
-           #:load-proxy-script
+           #:load-proxy-system-platform
            #:evaluate-proxy-script
-           #:load-proxy
            #:coerce-proxy-config
            #:resolve-proxy
            #:effective-proxy-config

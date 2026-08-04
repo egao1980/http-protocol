@@ -1,5 +1,5 @@
 (defsystem "http-protocol"
-  :version "0.2.3"
+  :version "0.3.0"
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
@@ -14,6 +14,7 @@
                (:file "content-encoding")
                (:file "content-disposition")
                (:file "types")
+               (:file "http-version")
                (:file "timeout")
                (:file "retry")
                (:file "proxy")
@@ -36,6 +37,7 @@
   :serial t
   :components ((:file "package")
                (:file "protocol-test")
+               (:file "http-version-test")
                (:file "body-stream-test")
                (:file "multipart-test")
                (:file "form-test")

@@ -6,6 +6,9 @@
            #:unsupported-content-coding-coding
            #:unsupported-operation
            #:unsupported-operation-operation
+           #:http-version-not-available
+           #:http-version-not-available-requested
+           #:http-version-not-available-negotiated
            #:http-connection-error
            #:http-timeout-error
            #:http-tls-error
@@ -77,6 +80,7 @@
            #:http-client-proxy
            #:http-client-pool
            #:http-client-verify
+           #:http-client-http-version
            #:http-file
            #:http-file-p
            #:make-http-file
@@ -109,8 +113,16 @@
            #:http-request-decompress
            #:http-request-force-binary
            #:http-request-want-stream
+           #:http-request-http-version
            #:http-request-raise-for-status
            #:http-request-extras
+           #:normalize-http-version
+           #:http-version-preference-p
+           #:effective-http-version
+           #:alpn-protocols-for-version
+           #:http-version-from-alpn
+           #:ensure-http-version-available
+           #:*valid-http-versions*
            #:effective-auth
            #:authorization-header-value
            #:range-header-value

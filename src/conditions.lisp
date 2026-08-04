@@ -21,6 +21,18 @@
                      (unsupported-operation-operation c)
                      (http-error-message c)))))
 
+(define-condition http-version-not-available (unsupported-operation)
+  ((requested :initarg :requested :reader http-version-not-available-requested
+              :initform :http/2)
+   (negotiated :initarg :negotiated :reader http-version-not-available-negotiated
+               :initform nil))
+  (:default-initargs :operation 'http-version)
+  (:report (lambda (c s)
+             (format s "HTTP version ~S not available~@[ (negotiated ~S)~]~@[ — ~A~]"
+                     (http-version-not-available-requested c)
+                     (http-version-not-available-negotiated c)
+                     (http-error-message c)))))
+
 (define-condition http-connection-error (http-error) ())
 (define-condition http-timeout-error (http-error) ())
 (define-condition http-tls-error (http-error) ())

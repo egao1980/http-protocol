@@ -4,11 +4,13 @@
 
 (defgeneric make-http-client (backend &key base-url headers cookie-jar auth timeout
                                       retry max-redirects proxy pool verify
+                                      http-version
                                       &allow-other-keys)
   (:documentation "Create an HTTP-CLIENT for BACKEND (urllib3/httpx Session shape).
    COOKIE-JAR defaults to a fresh empty jar when omitted.
    TIMEOUT / RETRY / PROXY / POOL are protocol CLOS values (see timeout/retry/proxy/pool).
-   AUTH defaults to NIL — (:basic u p) | (:bearer tok) | Authorization string.")
+   AUTH defaults to NIL — (:basic u p) | (:bearer tok) | Authorization string.
+   HTTP-VERSION — :auto (prefer HTTP/2) | :http/1.1 | :http/2.")
   (:method ((backend http-backend) &rest keys
             &key (cookie-jar nil cookie-jar-p) &allow-other-keys)
     (let ((keys* (loop for (k v) on keys by #'cddr

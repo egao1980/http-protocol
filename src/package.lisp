@@ -125,6 +125,8 @@
            #:response-cookies
            #:response-history
            #:response-request
+           #:response-elapsed
+           #:response-bytes-downloaded
            #:response-header
            #:response-as-http-file
            #:ensure-cookie-jar

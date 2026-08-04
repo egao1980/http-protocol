@@ -121,7 +121,17 @@
             :documentation "cl-cookie:cookie list set by this response (Set-Cookie).")
    (history :initarg :history :reader response-history :initform nil
             :documentation "Prior HTTP-RESPONSE objects in a redirect chain.")
-   (request :initarg :request :reader response-request :initform nil)))
+   (request :initarg :request :reader response-request :initform nil)
+   (elapsed :initarg :elapsed :accessor response-elapsed :initform nil
+            :documentation
+            "Wall seconds for the transfer (requests r.elapsed / httpx).
+             Filled by cl-stack-http send hooks; backends may set earlier.")
+   (bytes-downloaded :initarg :bytes-downloaded :accessor response-bytes-downloaded
+                     :initform 0
+                     :documentation
+                     "Decoded body octets observed (httpx num_bytes_downloaded).
+                      Eager bodies: full size after send. Streams: updated as
+                      chunks are read (e.g. map-response-bytes).")))
 
 (defun response-as-http-file (response &key filename content-type)
   "Wrap RESPONSE body as an HTTP-FILE (stream when :want-stream was used).

@@ -1,5 +1,5 @@
 (defsystem "http-protocol"
-  :version "0.2.2"
+  :version "0.2.3"
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"

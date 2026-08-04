@@ -39,6 +39,24 @@
   (ok (string= "http://ex.com/"
                (apply-request-params "http://ex.com/" nil))))
 
+(deftest normalize-form-multi-value-and-null
+  "requests/httpx: list values → repeated keys; None/NIL dropped."
+  (ok (equal '(("key1" . "value1") ("key2" . "value2") ("key2" . "value3"))
+             (normalize-form-alist
+              '(("key1" . "value1")
+                ("key2" . ("value2" "value3"))
+                ("skip" . nil)))))
+  (ok (string= "http://ex.com/get?key1=value1&key2=value2&key2=value3"
+               (apply-request-params
+                "http://ex.com/get"
+                '(("key1" . "value1")
+                  ("key2" . ("value2" "value3"))
+                  ("skip" . nil)))))
+  (ok (equalp (coerce-to-octets "key1=value1&key2=value2&key2=value3")
+              (encode-urlencoded '(("key1" . "value1")
+                                   ("key2" . ("value2" "value3"))
+                                   ("skip" . nil))))))
+
 (deftest finalize-request-url-consumes-params
   (let ((req (make-http-request :url "http://ex.com/search"
                                 :params '(("q" . "a b") ("page" . 2)))))

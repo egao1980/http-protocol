@@ -20,12 +20,38 @@
     (character (string value))
     (t (princ-to-string value))))
 
+(defun %proper-list-p (x)
+  (and (listp x) (null (cdr (last x)))))
+
+(defun %multi-form-values-p (value)
+  "T when VALUE is a proper list of scalar form values (requests/httpx multi-value)."
+  (and (consp value)
+       (%proper-list-p value)
+       (every (lambda (v)
+                (or (null v)
+                    (stringp v)
+                    (numberp v)
+                    (characterp v)
+                    (symbolp v)
+                    (typep v '(vector (unsigned-byte 8)))))
+              value)))
+
 (defun normalize-form-alist (alist)
-  "Alist ((name . value)…) → string/number/octets pairs for quri."
-  (mapcar (lambda (pair)
-            (cons (%form-field-name (car pair))
-                  (%form-field-value (cdr pair))))
-          alist))
+  "Alist ((name . value)…) → string/number/octets pairs for quri.
+
+   requests/httpx parity:
+   - NIL values are omitted (Python `None` dropped from query/form).
+   - A proper list of scalars expands to repeated keys
+     (`key2: [v2, v3]` → `key2=v2&key2=v3`)."
+  (loop for (name . value) in alist
+        for n = (%form-field-name name)
+        nconc (cond
+                ((null value) nil)
+                ((%multi-form-values-p value)
+                 (loop for v in value
+                       unless (null v)
+                       collect (cons n (%form-field-value v))))
+                (t (list (cons n (%form-field-value value)))))))
 
 (defun encode-urlencoded (data &key (space-to-plus t))
   "Encode DATA alist as application/x-www-form-urlencoded octets (WHATWG: + for space)."

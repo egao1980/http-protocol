@@ -36,6 +36,7 @@
            #:normalize-form-alist
            #:encode-urlencoded
            #:apply-request-params
+           #:apply-client-base-url!
            #:finalize-request-url!
            #:encode-http-data
            #:decode-http-data
@@ -109,6 +110,7 @@
            #:http-request-force-binary
            #:http-request-want-stream
            #:http-request-raise-for-status
+           #:http-request-extras
            #:effective-auth
            #:authorization-header-value
            #:range-header-value

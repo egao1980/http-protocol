@@ -45,6 +45,19 @@
         (setf (quri:uri-query-params uri) (append existing extra))
         (quri:render-uri uri))))
 
+(defun apply-client-base-url! (client request)
+  "If REQUEST URL is scheme-less, merge against CLIENT's :base-url (httpx shape).
+   Destructive. No-op when base is NIL or URL already absolute. Returns URL."
+  (check-type request http-request)
+  (let ((base (and client (http-client-base-url client)))
+        (url (http-request-url request)))
+    (when (and base url (plusp (length (string url))))
+      (let ((u (quri:uri url)))
+        (unless (quri:uri-scheme u)
+          (setf (http-request-url request)
+                (quri:render-uri (quri:merge-uris u (quri:uri base))))))))
+  (http-request-url request))
+
 (defun finalize-request-url! (request)
   "Apply REQUEST's :params into its URL (destructive). Clears params after merge
    so repeated SEND is idempotent. Returns the effective URL string."

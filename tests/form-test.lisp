@@ -65,3 +65,23 @@
     (send backend client req)
     (ok (string= "http://ex.com/x?a=1" (%probe-url backend)))
     (ok (null (http-request-params req)))))
+
+(deftest apply-client-base-url-relative
+  (let* ((backend (make-instance '%form-probe-backend))
+         (client (make-http-client backend :base-url "http://ex.com/api/"))
+         (req (make-http-request :url "items" :params '(("q" . "1")))))
+    (send backend client req)
+    (ok (string= "http://ex.com/api/items?q=1" (%probe-url backend)))))
+
+(deftest apply-client-base-url-absolute-untouched
+  (let* ((backend (make-instance '%form-probe-backend))
+         (client (make-http-client backend :base-url "http://ex.com/api/"))
+         (req (make-http-request :url "https://other.test/x")))
+    (send backend client req)
+    (ok (string= "https://other.test/x" (%probe-url backend)))))
+
+(deftest http-request-extras-exported
+  (let ((req (make-http-request :url "http://x" :extras '(:certificate "/c.pem"))))
+    (ok (equal '(:certificate "/c.pem") (http-request-extras req)))
+    (setf (http-request-extras req) '(:key "/k.pem"))
+    (ok (equal '(:key "/k.pem") (http-request-extras req)))))

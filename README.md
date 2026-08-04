@@ -31,3 +31,14 @@ Facade package: `http` (`http:get`, `http:request`, …). Protocol package: `htt
 ## Tracking
 
 [cl-stack#30](https://github.com/egao1980/cl-stack/issues/30) · [#47](https://github.com/egao1980/cl-stack/issues/47)
+
+## Publish
+
+Source-only OCI publish is centralized in [`cl-stack-systems`](https://github.com/egao1980/cl-stack-systems)
+(`imports/http-protocol/qlfile` pin + shared `publish.yml`). Packaging metadata lives in the `.asd`
+(`auto-package-spec`):
+
+```bash
+gh workflow run publish.yml -R egao1980/cl-stack-systems -f import=http-protocol
+```
+

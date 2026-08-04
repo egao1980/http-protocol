@@ -24,7 +24,8 @@
 (defgeneric send (backend client request &key)
   (:documentation "Perform REQUEST on CLIENT via BACKEND. Blocking → HTTP-RESPONSE.")
   (:method :before ((backend http-backend) client request &key)
-    (declare (ignore backend client))
+    (declare (ignore backend))
+    (apply-client-base-url! client request)
     (finalize-request-url! request))
   (:method ((backend http-backend) client request &key)
     (declare (ignore client request))
@@ -42,9 +43,10 @@
     Facade layers wrap this as a Blackbird-shaped promise — backends must not
     hard-depend on Blackbird.
 
-    :BEFORE merges REQUEST :params into the URL (quri) for all backends.")
+    :BEFORE joins CLIENT :base-url (relative URL) then merges REQUEST :params.")
   (:method :before ((backend http-backend) client request &key callback error-callback)
-    (declare (ignore backend client callback error-callback))
+    (declare (ignore backend callback error-callback))
+    (apply-client-base-url! client request)
     (finalize-request-url! request))
   (:method ((backend http-backend) client request &key callback error-callback)
     (declare (ignore client request callback error-callback))

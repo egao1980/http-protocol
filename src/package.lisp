@@ -122,7 +122,15 @@
            #:alpn-protocols-for-version
            #:http-version-from-alpn
            #:ensure-http-version-available
+           #:backend-http-versions
+           #:backend-supports-http-version-p
+           #:http2-connection-specific-header-p
+           #:filter-headers-for-http-version
+           #:http2-authority
+           #:http2-path
+           #:make-http2-request-headers
            #:*valid-http-versions*
+           #:*http2-connection-specific-headers*
            #:effective-auth
            #:authorization-header-value
            #:range-header-value

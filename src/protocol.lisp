@@ -4,11 +4,13 @@
 
 (defgeneric make-http-client (backend &key base-url headers cookie-jar auth timeout
                                       retry max-redirects proxy pool verify
+                                      http-version
                                       &allow-other-keys)
   (:documentation "Create an HTTP-CLIENT for BACKEND (urllib3/httpx Session shape).
    COOKIE-JAR defaults to a fresh empty jar when omitted.
    TIMEOUT / RETRY / PROXY / POOL are protocol CLOS values (see timeout/retry/proxy/pool).
-   AUTH defaults to NIL — (:basic u p) | (:bearer tok) | Authorization string.")
+   AUTH defaults to NIL — (:basic u p) | (:bearer tok) | Authorization string.
+   HTTP-VERSION — :auto (prefer HTTP/2) | :http/1.1 | :http/2.")
   (:method ((backend http-backend) &rest keys
             &key (cookie-jar nil cookie-jar-p) &allow-other-keys)
     (let ((keys* (loop for (k v) on keys by #'cddr
@@ -22,11 +24,23 @@
              keys*))))
 
 (defgeneric send (backend client request &key)
-  (:documentation "Perform REQUEST on CLIENT via BACKEND. Blocking → HTTP-RESPONSE.")
+  (:documentation
+   "Perform REQUEST on CLIENT via BACKEND. Blocking → HTTP-RESPONSE.
+
+    HTTP version (RFC 9113 / 9112): CLIENT/REQUEST :http-version is a
+    preference (:auto|:http/1.1|:http/2). Backends negotiate (ALPN RFC 7301
+    or OS), enforce via ENSURE-HTTP-VERSION-AVAILABLE, and set
+    RESPONSE-HTTP-VERSION. Framing/HPACK stay in the backend.")
   (:method :before ((backend http-backend) client request &key)
-    (declare (ignore backend))
     (apply-client-base-url! client request)
-    (finalize-request-url! request))
+    (finalize-request-url! request)
+    (let ((pref (effective-http-version client request)))
+      (unless (backend-supports-http-version-p backend pref)
+        (error 'http-version-not-available
+               :requested pref
+               :negotiated nil
+               :message (format nil "backend ~A does not support ~A"
+                                (backend-name backend) pref)))))
   (:method ((backend http-backend) client request &key)
     (declare (ignore client request))
     (error 'unsupported-operation :operation 'send
@@ -45,9 +59,16 @@
 
     :BEFORE joins CLIENT :base-url (relative URL) then merges REQUEST :params.")
   (:method :before ((backend http-backend) client request &key callback error-callback)
-    (declare (ignore backend callback error-callback))
+    (declare (ignore callback error-callback))
     (apply-client-base-url! client request)
-    (finalize-request-url! request))
+    (finalize-request-url! request)
+    (let ((pref (effective-http-version client request)))
+      (unless (backend-supports-http-version-p backend pref)
+        (error 'http-version-not-available
+               :requested pref
+               :negotiated nil
+               :message (format nil "backend ~A does not support ~A"
+                                (backend-name backend) pref)))))
   (:method ((backend http-backend) client request &key callback error-callback)
     (declare (ignore client request callback error-callback))
     (error 'unsupported-operation :operation 'send-async

@@ -28,6 +28,11 @@
          "HTTP-CONNECTION-POOL | T (shared *default-connection-pool*) | NIL.
           Concrete pools are backend subclasses of HTTP-CONNECTION-POOL.")
    (verify :initarg :verify :accessor http-client-verify :initform t)
+   (http-version :initarg :http-version :accessor http-client-http-version
+                 :initform :auto
+                 :documentation
+                 "Preferred HTTP version: :auto (prefer 2) | :http/1.1 | :http/2.
+                  Actual negotiated version is on RESPONSE-HTTP-VERSION.")
    (defaults :initarg :defaults :accessor http-client-defaults :initform nil
              :documentation "Plist of extra backend-specific defaults.")))
 
@@ -99,6 +104,10 @@
    (decompress :initarg :decompress :accessor http-request-decompress :initform t)
    (force-binary :initarg :force-binary :accessor http-request-force-binary :initform t)
    (want-stream :initarg :want-stream :accessor http-request-want-stream :initform nil)
+   (http-version :initarg :http-version :accessor http-request-http-version
+                 :initform nil
+                 :documentation
+                 "Override client preference: :auto | :http/1.1 | :http/2 | NIL (inherit).")
    (raise-for-status :initarg :raise-for-status :accessor http-request-raise-for-status
                      :initform nil)
    (extras :initarg :extras :accessor http-request-extras :initform nil
@@ -116,7 +125,10 @@
    (body :initarg :body :reader response-body
          :documentation "Octets, string, stream, or http-file when wrapped.")
    (url :initarg :url :reader response-url :initform nil)
-   (http-version :initarg :http-version :reader response-http-version :initform nil)
+   (http-version :initarg :http-version :reader response-http-version :initform nil
+                 :documentation
+                 "Negotiated version keyword :http/1.1 | :http/2 (or legacy string).
+                  Use NORMALIZE-HTTP-VERSION to coerce.")
    (cookies :initarg :cookies :reader response-cookies :initform nil
             :documentation "cl-cookie:cookie list set by this response (Set-Cookie).")
    (history :initarg :history :reader response-history :initform nil

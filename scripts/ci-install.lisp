@@ -24,11 +24,9 @@
 
 (call-with-ci-muffles
  (lambda ()
-   ;; cl-unicode: OCI 0.1.6 lacks idna-mapping (cl-stack#164) — QL until 0.1.7.
    (cl-repo:ensure-system-dependencies "http-protocol"
      :also-tests t
-     :sources '(("rove" :ql)
-                ("cl-unicode" :ql)))))
+     :sources '(("rove" :ql)))))
 
 (format t "~&; ci: install phase done~%")
 (uiop:quit 0)

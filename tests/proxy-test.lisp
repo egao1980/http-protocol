@@ -1,5 +1,18 @@
 (in-package #:http-protocol/tests)
 
+(defun %apply-env-bindings (bindings)
+  "Unsets before sets: Windows env names are case-insensitive, so unsetting
+   HTTP_PROXY after setting http_proxy would clear the value just set."
+  (dolist (b bindings)
+    (destructuring-bind (name value) b
+      (unless value
+        #+sbcl (sb-posix:unsetenv name)
+        #-sbcl (setf (uiop:getenv name) ""))))
+  (dolist (b bindings)
+    (destructuring-bind (name value) b
+      (when value
+        (setf (uiop:getenv name) value)))))
+
 (defun %call-with-env (bindings thunk)
   "BINDINGS = ((name value)…); VALUE NIL unsets. Restores previous values."
   (let ((saved (mapcar (lambda (b)
@@ -7,19 +20,9 @@
                        bindings)))
     (unwind-protect
          (progn
-           (dolist (b bindings)
-             (destructuring-bind (name value) b
-               (if value
-                   (setf (uiop:getenv name) value)
-                   #+sbcl (sb-posix:unsetenv name)
-                   #-sbcl (setf (uiop:getenv name) ""))))
+           (%apply-env-bindings bindings)
            (funcall thunk))
-      (dolist (b saved)
-        (destructuring-bind (name value) b
-          (if value
-              (setf (uiop:getenv name) value)
-              #+sbcl (sb-posix:unsetenv name)
-              #-sbcl (setf (uiop:getenv name) "")))))))
+      (%apply-env-bindings saved))))
 
 (defmacro with-env (bindings &body body)
   `(%call-with-env ',bindings (lambda () ,@body)))

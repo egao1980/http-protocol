@@ -18,9 +18,9 @@
 
 (defparameter *http2-connection-specific-headers*
   '("connection" "keep-alive" "proxy-connection" "transfer-encoding"
-    "upgrade" "http2-settings" "host" "te")
+    "upgrade" "http2-settings" "host")
   "RFC 9113 §8.2.2 — MUST NOT appear as HTTP/2 fields (Host → :authority).
-   TE is stripped here for wave-1; RFC allows TE: trailers only.")
+   TE is not listed: RFC allows the single token TE: trailers (gRPC).")
 
 (defun normalize-http-version (value &key (default :auto))
   "Coerce VALUE to :auto | :http/1.1 | :http/2.
@@ -130,20 +130,35 @@
 
 (defun http2-connection-specific-header-p (name)
   "True if NAME is forbidden on HTTP/2 connections (RFC 9113 §8.2.2).
-   HOST is treated as connection-specific here — use :authority instead (§8.3.1)."
+   HOST is treated as connection-specific here — use :authority instead (§8.3.1).
+   TE is handled separately — only TE: trailers is legal."
   (member (string-downcase (string name))
           *http2-connection-specific-headers*
           :test #'string=))
+
+(defun http2-te-trailers-p (value)
+  "True if VALUE is the single token \"trailers\" (RFC 9113 §8.2.2)."
+  (and value
+       (string-equal (string-trim '(#\Space #\Tab) (princ-to-string value))
+                     "trailers")))
+
+(defun http2-drop-field-p (name value)
+  "True if NAME/VALUE must not appear as an HTTP/2 field."
+  (let ((n (string-downcase (string name))))
+    (cond
+      ((string= n "te") (not (http2-te-trailers-p value)))
+      (t (http2-connection-specific-header-p n)))))
 
 (defun filter-headers-for-http-version (headers version)
   "Return HEADERS alist suitable for VERSION.
 
    For :http/2, drop connection-specific fields (RFC 9113 §8.2.2).
+   TE is kept only when the value is the single token \"trailers\".
    For :http/1.1 / :auto, return HEADERS unchanged (caller still owns Host)."
   (let ((v (normalize-http-version version :default :http/1.1)))
     (if (eq v :http/2)
         (remove-if (lambda (pair)
-                     (http2-connection-specific-header-p (car pair)))
+                     (http2-drop-field-p (car pair) (cdr pair)))
                    headers)
         headers)))
 

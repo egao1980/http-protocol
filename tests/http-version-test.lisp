@@ -49,6 +49,14 @@
     (ok (equal '(("Accept" . "*/*") ("X-Foo" . "1")) out))
     (ok (equal in (filter-headers-for-http-version in :http/1.1)))))
 
+(deftest filter-headers-for-http2-keeps-te-trailers
+  (let* ((in '(("Accept" . "*/*")
+               ("TE" . "trailers")
+               ("te" . "gzip")))
+         (out (filter-headers-for-http-version in :http/2)))
+    (ok (equal '(("Accept" . "*/*") ("TE" . "trailers")) out))
+    (ok (equal in (filter-headers-for-http-version in :http/1.1)))))
+
 (deftest make-http2-request-headers-rfc9113-order
   (let* ((uri (quri:uri "https://ex.test:8443/a?q=1"))
          (hdrs (make-http2-request-headers

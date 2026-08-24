@@ -125,6 +125,8 @@
            #:backend-http-versions
            #:backend-supports-http-version-p
            #:http2-connection-specific-header-p
+           #:http2-te-trailers-p
+           #:http2-drop-field-p
            #:filter-headers-for-http-version
            #:http2-authority
            #:http2-path

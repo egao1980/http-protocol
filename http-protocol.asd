@@ -5,6 +5,7 @@
   :license "MIT"
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri" "cl-base64"
                "babel")
+  :properties (:cl-repo (:ci (:sources (("rove" :ql)))))
   :serial t
   :pathname "src"
   :components ((:file "package")

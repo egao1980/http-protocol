@@ -3,6 +3,15 @@
 (defun %bytes (s)
   (map '(simple-array (unsigned-byte 8) (*)) #'char-code s))
 
+(deftest coerce-to-octets-utf8
+  (ok (equalp (babel:string-to-octets "hi" :encoding :utf-8)
+              (coerce-to-octets "hi")))
+  (let ((em (string (code-char 8212))))
+    (ok (equalp (babel:string-to-octets em :encoding :utf-8)
+                (coerce-to-octets em)))
+    (ok (signals (map '(simple-array (unsigned-byte 8) (*)) #'char-code em)
+                 'type-error))))
+
 (deftest normalize-and-parse
   (ok (eq (normalize-content-coding "gzip") :gzip))
   (ok (eq (normalize-content-coding :x-gzip) :gzip))

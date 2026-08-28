@@ -3,7 +3,6 @@
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
-  :properties (:cl-repo (:ci (:with ("dissect"))))
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri" "cl-base64"
                "babel")
 
@@ -34,7 +33,7 @@
   :in-order-to ((test-op (test-op "http-protocol/tests"))))
 
 (defsystem "http-protocol/tests"
-  :depends-on ("http-protocol" "rove" "dissect")
+  :depends-on ("http-protocol" "rove")
   :pathname "tests"
   :serial t
   :components ((:file "package")

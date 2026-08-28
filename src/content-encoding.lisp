@@ -66,7 +66,7 @@
     ((vector (unsigned-byte 8))
      (make-array (length input) :element-type '(unsigned-byte 8) :initial-contents input))
     (string
-     (map '(simple-array (unsigned-byte 8) (*)) #'char-code input))))
+     (babel:string-to-octets input :encoding :utf-8))))
 
 ;; Back-compat internal name used by around methods.
 (defun %octet-vector (input) (coerce-to-octets input))

@@ -5,8 +5,9 @@
 ;;;
 ;;; Backends (separate packages, event-backend pattern):
 ;;;   http-encoding-chipz   — :gzip :deflate
-;;;   http-encoding-brotli  — :br   (soft; needs cl-stack-brotli natives)
-;;;   http-encoding-zstd    — :zstd (soft; needs cl-stack-zstd natives)
+;;;   http-encoding-brotli  — :br     (soft; needs cl-stack-brotli natives)
+;;;   http-encoding-zstd    — :zstd   (soft; needs cl-stack-zstd natives)
+;;;   http-encoding-snappy  — :snappy (soft; needs cl-stack-snappy natives; raw)
 ;;;
 ;;; No plugin registry: load the ASDF system; methods appear. Soft-load
 ;;; probes *content-coding-systems* for Accept-Encoding.
@@ -15,7 +16,8 @@
   '((:gzip . "http-encoding-chipz")
     (:deflate . "http-encoding-chipz")
     (:br . "http-encoding-brotli")
-    (:zstd . "http-encoding-zstd"))
+    (:zstd . "http-encoding-zstd")
+    (:snappy . "http-encoding-snappy"))
   "Alist coding → ASDF system that specializes DECODE/ENCODE-CONTENT-CODING.")
 
 (defvar *warned-missing-overlays* nil)
@@ -23,7 +25,7 @@
   "Cache successful coding availability probes: coding → T.")
 
 (defun normalize-content-coding (coding)
-  "Return a keyword coding (:gzip :deflate :br :zstd :identity) or NIL if blank."
+  "Return a keyword coding (:gzip :deflate :br :zstd :snappy :identity) or NIL if blank."
   (etypecase coding
     (null nil)
     (keyword
@@ -32,6 +34,7 @@
        ((:deflate :zlib) :deflate)
        ((:br :brotli) :br)
        ((:zstd :zstandard) :zstd)
+       ((:snappy :x-snappy) :snappy)
        ((:identity) :identity)
        (otherwise coding)))
     (string
@@ -41,6 +44,7 @@
              ((or (string= s "deflate") (string= s "zlib")) :deflate)
              ((or (string= s "br") (string= s "brotli")) :br)
              ((or (string= s "zstd") (string= s "zstandard")) :zstd)
+             ((or (string= s "snappy") (string= s "x-snappy")) :snappy)
              ((string= s "identity") :identity)
              (t (intern (string-upcase s) :keyword)))))
     (symbol (normalize-content-coding (string coding)))))
@@ -126,13 +130,13 @@
   (let ((c (normalize-content-coding coding)))
     (case c
       (:identity t)
-      ((:gzip :deflate :br :zstd) (%coding-available-p c))
+      ((:gzip :deflate :br :zstd :snappy) (%coding-available-p c))
       (otherwise nil))))
 
 (defun available-content-codings (&key (warn t))
   "Codings we can decode, preference order for Accept-Encoding."
   (let ((out '()))
-    (dolist (c '(:gzip :deflate :br :zstd))
+    (dolist (c '(:gzip :deflate :br :zstd :snappy))
       (if (content-coding-supported-p c)
           (setf out (nconc out (list c)))
           (when warn (%warn-missing c))))

@@ -16,8 +16,11 @@
   (ok (eq (normalize-content-coding "gzip") :gzip))
   (ok (eq (normalize-content-coding :x-gzip) :gzip))
   (ok (eq (normalize-content-coding "BR") :br))
+  (ok (eq (normalize-content-coding "x-snappy") :snappy))
   (ok (equal (parse-content-encoding "gzip, deflate, br")
              '(:gzip :deflate :br)))
+  (ok (equal (parse-content-encoding "zstd, snappy")
+             '(:zstd :snappy)))
   (ok (equal (parse-content-encoding "gzip;q=1.0, identity;q=0.5")
              '(:gzip :identity))))
 
@@ -36,4 +39,5 @@
 (deftest coding-system-map
   (ok (equal (cdr (assoc :gzip *content-coding-systems*)) "http-encoding-chipz"))
   (ok (equal (cdr (assoc :br *content-coding-systems*)) "http-encoding-brotli"))
-  (ok (equal (cdr (assoc :zstd *content-coding-systems*)) "http-encoding-zstd")))
+  (ok (equal (cdr (assoc :zstd *content-coding-systems*)) "http-encoding-zstd"))
+  (ok (equal (cdr (assoc :snappy *content-coding-systems*)) "http-encoding-snappy")))

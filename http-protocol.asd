@@ -1,16 +1,17 @@
 (defsystem "http-protocol"
-  :version "0.3.5"
+  :version "0.3.6"
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri" "cl-base64"
-               "babel")
+               "babel" "bordeaux-threads")
 
   :serial t
   :pathname "src"
   :components ((:file "package")
                (:file "conditions")
                (:file "octet-stream")
+               (:file "body-pipe")
                (:file "buffered-stream")
                (:file "content-encoding")
                (:file "content-disposition")

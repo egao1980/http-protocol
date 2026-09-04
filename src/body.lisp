@@ -27,6 +27,7 @@
              (let ((x (unwrap x)))
                (etypecase x
                  (null nil)
+                 (http-body-pipe x)
                  (stream (bufferize x))
                  ((or string vector) (coerce-to-octets x))))))
     (if (null coding)

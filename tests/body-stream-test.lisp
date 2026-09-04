@@ -69,3 +69,35 @@
     (let ((got (make-array 5 :element-type '(unsigned-byte 8))))
       (ok (= 5 (read-sequence got out)))
       (ok (equalp #(1 2 3 4 5) got)))))
+
+(deftest body-pipe-write-then-read
+  (let ((p (make-http-body-pipe)))
+    (write-body-pipe p #(1 2 3))
+    (write-body-pipe p #(4 5))
+    (close-body-pipe p)
+    (ok (http-body-pipe-p p))
+    (ok (http-body-pipe-listen p))
+    (let ((out (make-array 5 :element-type '(unsigned-byte 8))))
+      (ok (= 5 (http-body-pipe-read-available p out 0 5)))
+      (ok (equalp #(1 2 3 4 5) out)))
+    (ok (http-body-pipe-eof-p p))))
+
+(deftest body-pipe-gray-roundtrip
+  (let ((p (make-http-body-pipe)))
+    (write-sequence #(9 8 7) p)
+    (close-body-pipe p)
+    (ok (equalp #(9 8 7) (slurp-octets p)))))
+
+(deftest body-pipe-not-bufferized
+  (let ((p (make-http-body-pipe)))
+    (multiple-value-bind (wire ce)
+        (prepare-request-content p)
+      (ok (null ce))
+      (ok (eq p wire)))))
+
+(deftest body-pipe-on-data
+  (let* ((n 0)
+         (p (make-http-body-pipe :on-data (lambda () (incf n)))))
+    (write-body-pipe p #(1))
+    (close-body-pipe p)
+    (ok (= 2 n))))

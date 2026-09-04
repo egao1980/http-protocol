@@ -27,6 +27,15 @@
            #:make-decoding-stream
            #:make-encoding-stream
            #:make-octet-input-stream
+           #:http-body-pipe
+           #:http-body-pipe-p
+           #:make-http-body-pipe
+           #:write-body-pipe
+           #:close-body-pipe
+           #:http-body-pipe-eof-p
+           #:http-body-pipe-listen
+           #:http-body-pipe-read-available
+           #:body-pipe-on-data
            #:make-buffered-binary-input-stream
            #:buffered-binary-input-stream
            #:buffered-stream-source

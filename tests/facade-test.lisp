@@ -22,6 +22,22 @@
       (ok (equalp (coerce-to-octets "ok") (response-body res)))
       (ok (string= "text/plain" (response-header res :content-type))))))
 
+(deftest response-trailers-slot
+  (let* ((ht (make-hash-table :test #'equal))
+         (res (make-instance 'http-response
+                             :status 200
+                             :headers (make-hash-table :test #'equal)
+                             :body #()
+                             :trailers ht)))
+    (setf (gethash "grpc-status" ht) "0")
+    (ok (eq ht (response-trailers res)))
+    (ok (equal "0" (gethash "grpc-status" (response-trailers res))))
+    (ok (null (response-trailers
+               (make-instance 'http-response
+                              :status 200
+                              :headers (make-hash-table :test #'equal)
+                              :body #()))))))
+
 (deftest raise-for-status-opt-in
   (let ((res (make-instance 'http-response
                             :status 404

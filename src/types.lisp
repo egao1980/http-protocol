@@ -143,7 +143,12 @@
                      :documentation
                      "Decoded body octets observed (httpx num_bytes_downloaded).
                       Eager bodies: full size after send. Streams: updated as
-                      chunks are read (e.g. map-response-bytes).")))
+                      chunks are read (e.g. map-response-bytes).")
+   (trailers :initarg :trailers :accessor response-trailers :initform nil
+             :documentation
+             "EQUAL hash-table of HTTP trailers (lowercase keys), or NIL.
+              H2: set when END_STREAM arrives (after the last DATA). For
+              :want-stream, readable once the body stream is at EOF.")))
 
 (defun response-as-http-file (response &key filename content-type)
   "Wrap RESPONSE body as an HTTP-FILE (stream when :want-stream was used).

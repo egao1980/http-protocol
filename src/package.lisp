@@ -149,6 +149,7 @@
            #:response-request
            #:response-elapsed
            #:response-bytes-downloaded
+           #:response-trailers
            #:response-header
            #:response-as-http-file
            #:ensure-cookie-jar

@@ -7,6 +7,9 @@
   (or (http-request-auth request)
       (and client (http-client-auth client))))
 
+(defun %basic-b64 (user password)
+  (encoding-protocol:encode (format nil "~A:~A" user password) :encoding :base64))
+
 (defun authorization-header-value (auth)
   "Return Authorization header value, or NIL.
    AUTH: NIL | string | (:basic user password) | (:bearer token).
@@ -25,10 +28,7 @@
           (unless (and user password)
             (error 'http-protocol-error
                    :message ":auth (:basic user password) needs two args"))
-          (format nil "Basic ~A"
-                  (encoding-protocol:encode
-                   (format nil "~A:~A" user password)
-                   :encoding :base64))))
+          (format nil "Basic ~A" (%basic-b64 user password))))
        (:bearer
         (let ((token (second auth)))
           (unless token

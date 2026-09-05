@@ -76,6 +76,39 @@
     (string (babel:string-to-octets encoded :encoding :utf-8))
     ((vector (unsigned-byte 8)) encoded)))
 
+(defun %serdes-format-for-media-type (mt)
+  "Format keyword from serdes-protocol when that system is loaded."
+  (when mt
+    (let* ((pkg (find-package '#:serdes-protocol))
+           (fn (and pkg (find-symbol "FIND-FORMAT-FOR-MEDIA-TYPE" pkg))))
+      (when (and fn (fboundp fn))
+        (ignore-errors (funcall fn mt))))))
+
+(defun %well-known-payload-format (mt)
+  (cond
+    ((equal mt "application/cbor") :cbor)
+    ((or (equal mt "application/msgpack") (equal mt "application/x-msgpack"))
+     :messagepack)
+    ((or (equal mt "application/avro") (equal mt "avro/binary")) :avro)
+    ((equal mt "message/rfc822") :mime)
+    ((or (equal mt "multipart/form-data") (equal mt "multipart/mixed"))
+     :multipart)
+    ((or (equal mt "application/yaml") (equal mt "text/yaml")
+         (equal mt "application/x-yaml"))
+     :yaml)
+    (t nil)))
+
+(defun %registered-payload-type (type)
+  "TYPE when a data (de)serializer is registered; else NIL.
+   Keeps :auto → octets when the format implementor is not loaded."
+  (when (and type (or (lookup-data-serializer type)
+                      (lookup-data-deserializer type)))
+    type))
+
+(defun %inferred-payload-type (mt)
+  (or (%registered-payload-type (%serdes-format-for-media-type mt))
+      (%registered-payload-type (%well-known-payload-format mt))))
+
 (defun infer-encode-data-type (data content-type)
   "Pick a :data-type keyword from DATA and/or Content-Type."
   (let ((mt (%media-type content-type)))
@@ -86,6 +119,7 @@
                    (equal mt "application/xml")
                    (equal mt "application/javascript")))
        :text)
+      ((%inferred-payload-type mt))
       ((typep data '(vector (unsigned-byte 8))) :octets)
       ((stringp data) :text)
       ((hash-table-p data) :json)
@@ -103,6 +137,7 @@
            (equal mt "application/xml")
            (equal mt "application/javascript"))
        :text)
+      ((%inferred-payload-type mt))
       (t :octets))))
 
 (defgeneric encode-http-data (data type content-type)

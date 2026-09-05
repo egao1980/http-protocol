@@ -84,3 +84,16 @@
                                   (babel:octets-to-string o)))
     (ok (string= "a,b"
                  (decode-http-data (coerce-to-octets "a,b") :csv nil)))))
+
+(deftest infer-keeps-octets-without-codec
+  (ok (eq :octets (infer-decode-data-type "application/cbor")))
+  (ok (eq :octets (infer-decode-data-type "application/msgpack")))
+  (ok (eq :octets (infer-decode-data-type "avro/binary"))))
+
+(deftest infer-uses-registered-payload-codec
+  (with-data-codec (:cbor
+                    :encoder (lambda (d) d)
+                    :decoder (lambda (o) o))
+    (ok (eq :cbor (infer-decode-data-type "application/cbor")))
+    (ok (eq :cbor (infer-encode-data-type #(1 2) "application/cbor"))))
+  (ok (eq :octets (infer-decode-data-type "application/cbor"))))

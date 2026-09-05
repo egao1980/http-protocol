@@ -52,6 +52,8 @@
            #:finalize-request-url!
            #:encode-http-data
            #:decode-http-data
+           #:infer-encode-data-type
+           #:infer-decode-data-type
            #:response-data
            #:*data-serializers*
            #:*data-deserializers*

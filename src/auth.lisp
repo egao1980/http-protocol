@@ -28,7 +28,7 @@
           (format nil "Basic ~A"
                   (encoding-protocol:encode
                    (format nil "~A:~A" user password)
-                   :encoding :base64)))))
+                   :encoding :base64))))
        (:bearer
         (let ((token (second auth)))
           (unless token

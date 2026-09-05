@@ -26,8 +26,9 @@
             (error 'http-protocol-error
                    :message ":auth (:basic user password) needs two args"))
           (format nil "Basic ~A"
-                  (cl-base64:string-to-base64-string
-                   (format nil "~A:~A" user password)))))
+                  (encoding-protocol:encode
+                   (format nil "~A:~A" user password)
+                   :encoding :base64)))))
        (:bearer
         (let ((token (second auth)))
           (unless token

@@ -5,9 +5,6 @@
   :license "MIT"
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri"
                "encoding-protocol" "babel" "bordeaux-threads")
-  :properties (:cl-repo (:ci (:with ("encoding-protocol")
-                              :sources (("encoding-protocol" :oci)))))
-
   :serial t
   :pathname "src"
   :components ((:file "package")

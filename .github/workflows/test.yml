@@ -38,16 +38,18 @@ jobs:
         run: |
           set -euo pipefail
           orig="${CL_SOURCE_REGISTRY:-}"
-          client="${CL_REPOSITORY_CLIENT_DIR:-${CL_REPOSITORY_DEST:-}}"
+          dest="${CL_REPOSITORY_DEST:?}"
           sys="${HOME}/.local/share/cl-repository/systems"
           mkdir -p "${sys}"
           sep=":"
           if command -v cygpath >/dev/null 2>&1; then
             sep=";"
             sys="$(cygpath -m "${sys}")"
-            client="$(cygpath -m "${client}")"
+            dest="$(cygpath -m "${dest}")"
           fi
-          export CL_SOURCE_REGISTRY="${client}//${sep}${sys}//${sep}"
+          # Dest has the bundled client + ironclad + *published* http-protocol.
+          # Omit the checkout so this PR's asd is not the one the client loads.
+          export CL_SOURCE_REGISTRY="${dest}//${sep}${sys}//${sep}"
           ros -e "(sb-ext:disable-debugger)" \
               -e '(asdf:load-system "cl-repository-client")' \
               -e '(cl-repo:add-registry "https://ghcr.io" :namespace "egao1980/cl-systems" :priority :prepend)' \

@@ -39,6 +39,7 @@
            #:make-buffered-binary-input-stream
            #:buffered-binary-input-stream
            #:buffered-stream-source
+           #:stream-read-available
            #:*http-stream-buffer-size*
            #:copy-stream
            #:prepare-request-content

@@ -24,6 +24,26 @@
       (ok (= 3 (read-byte in)))
       (ok (eq :eof (read-byte in nil :eof))))))
 
+(deftest buffered-stream-over-live-pipe-does-not-wait-for-full-buffer
+  "Duplex bodies: a 5-octet read must return once 5 octets exist, even though
+   the pipe is still open and the 64K buffer is nowhere near full."
+  (let* ((pipe (make-http-body-pipe))
+         (in (make-buffered-binary-input-stream pipe :close-source-p nil))
+         (hdr (make-array 5 :element-type '(unsigned-byte 8)))
+         (got nil))
+    (write-body-pipe pipe #(0 0 0 0 3 10 1 65))
+    (let ((th (bt:make-thread (lambda () (setf got (read-sequence hdr in))))))
+      (loop repeat 100 until got do (sleep 0.01))
+      (unless got
+        (ignore-errors (bt:destroy-thread th)))
+      (ok (eql 5 got) "read-sequence returned with the pipe still open")
+      (ok (equalp #(0 0 0 0 3) hdr))
+      ;; The rest of the first write is already buffered.
+      (ok (= 3 (read-sequence hdr in :end 3)))
+      (ok (equalp #(10 1 65) (subseq hdr 0 3)))
+      (close-body-pipe pipe)
+      (ok (eq :eof (read-byte in nil :eof))))))
+
 (deftest prepare-request-content-stream-no-coding
   (with-open-stream (src (make-octet-input-stream #(9 8 7)))
     (multiple-value-bind (wire ce)

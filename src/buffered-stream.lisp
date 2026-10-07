@@ -28,11 +28,29 @@
                  :buffer (make-array buffer-size :element-type '(unsigned-byte 8))
                  :close-source-p close-source-p))
 
+(defgeneric stream-read-available (source buffer)
+  (:documentation
+   "Fill BUFFER from SOURCE for a buffered wrapper: block only until the first
+    octet (or EOF), then take what is already available. Returns the count,
+    0 at EOF. A full READ-SEQUENCE would wait for BUFFER-SIZE octets, which
+    deadlocks duplex bodies (gRPC bidi, SSE) whose peer waits for us first.")
+  (:method ((source stream) buffer)
+    "Portable fallback: READ-SEQUENCE — fine for sources that end or are in memory."
+    (read-sequence buffer source)))
+
+(defmethod stream-read-available ((source http-body-pipe) buffer)
+  (let ((b (read-byte source nil :eof)))
+    (if (eq b :eof)
+        0
+        (progn
+          (setf (aref buffer 0) b)
+          (http-body-pipe-read-available source buffer 1 (length buffer))))))
+
 (defun %buffered-refill (s)
   (when (buffered-stream-eof-p s)
     (return-from %buffered-refill 0))
   (let* ((buf (buffered-stream-buffer s))
-         (n (read-sequence buf (buffered-stream-source s))))
+         (n (stream-read-available (buffered-stream-source s) buf)))
     (setf (buffered-stream-start s) 0
           (buffered-stream-end s) n)
     (when (zerop n)

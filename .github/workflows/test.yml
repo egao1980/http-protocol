@@ -64,3 +64,11 @@ jobs:
       - uses: egao1980/cl-repository/.github/actions/ci@main
         with:
           phase: test
+
+  test-ecl:
+    uses: egao1980/cl-repository/.github/workflows/test-system-impl.yml@cursor/test-system-impl-1989
+    permissions:
+      contents: read
+      packages: read
+    with:
+      lisp: ecl

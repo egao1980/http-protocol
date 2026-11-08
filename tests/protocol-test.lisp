@@ -41,3 +41,17 @@
   (ok (equal (cdr (assoc :br *content-coding-systems*)) "http-encoding-brotli"))
   (ok (equal (cdr (assoc :zstd *content-coding-systems*)) "http-encoding-zstd"))
   (ok (equal (cdr (assoc :snappy *content-coding-systems*)) "http-encoding-snappy")))
+
+(deftest missing-coding-is-probed-once
+  "A miss used to be re-probed (ASDF lookup + LOAD-SYSTEM) on every request."
+  (let ((http-protocol::*coding-availability* (make-hash-table :test #'eq))
+        (probes 0)
+        (orig (fdefinition 'http-protocol::%probe-coding)))
+    (unwind-protect
+         (progn
+           (setf (fdefinition 'http-protocol::%probe-coding)
+                 (lambda (c) (declare (ignore c)) (incf probes) nil))
+           (ng (content-coding-supported-p :snappy))
+           (ng (content-coding-supported-p :snappy))
+           (ok (= 1 probes)))
+      (setf (fdefinition 'http-protocol::%probe-coding) orig))))

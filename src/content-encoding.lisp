@@ -22,7 +22,8 @@
 
 (defvar *warned-missing-overlays* nil)
 (defvar *coding-availability* (make-hash-table :test #'eq)
-  "Cache successful coding availability probes: coding → T.")
+  "Probe results: coding → T, or :UNAVAILABLE. A miss is cached too, so an
+absent backend is not looked up (and LOAD-SYSTEM'd) on every request.")
 
 (defun normalize-content-coding (coding)
   "Return a keyword coding (:gzip :deflate :br :zstd :snappy :identity) or NIL if blank."
@@ -96,6 +97,9 @@
                (progn (asdf:load-system sys) t)
              (error () nil))))))
 
+;; NOTINLINE: callers go through the function cell, so a test (or a
+;; debugging session) can redefine it. ECL calls same-file functions directly.
+(declaim (notinline %probe-coding))
 (defun %probe-coding (coding)
   "True if backend for CODING is loadable and round-trips 4 bytes."
   (let* ((c (normalize-content-coding coding))
@@ -110,13 +114,21 @@
                (equalp raw dec))
            (error () nil)))))
 
+(defun %backend-loaded-p (coding)
+  "True when CODING's backend system has been loaded since it was probed."
+  (let* ((name (cdr (assoc coding *content-coding-systems*)))
+         (sys (and name (asdf:registered-system name))))
+    (and sys (asdf:component-loaded-p sys))))
+
 (defun %coding-available-p (coding)
-  (let* ((c (normalize-content-coding coding)))
-    (or (gethash c *coding-availability*)
-        (let ((result (%probe-coding c)))
-          (when result
-            (setf (gethash c *coding-availability*) t))
-          result))))
+  (let* ((c (normalize-content-coding coding))
+         (cached (gethash c *coding-availability*)))
+    (cond ((eq cached t) t)
+          ;; Re-probe a miss only once its backend got loaded by someone.
+          ((and (eq cached :unavailable) (not (%backend-loaded-p c))) nil)
+          (t (let ((result (%probe-coding c)))
+               (setf (gethash c *coding-availability*) (if result t :unavailable))
+               result)))))
 
 (defun %warn-missing (coding)
   (unless (member coding *warned-missing-overlays*)

@@ -97,6 +97,9 @@ absent backend is not looked up (and LOAD-SYSTEM'd) on every request.")
                (progn (asdf:load-system sys) t)
              (error () nil))))))
 
+;; NOTINLINE: callers go through the function cell, so a test (or a
+;; debugging session) can redefine it. ECL calls same-file functions directly.
+(declaim (notinline %probe-coding))
 (defun %probe-coding (coding)
   "True if backend for CODING is loadable and round-trips 4 bytes."
   (let* ((c (normalize-content-coding coding))

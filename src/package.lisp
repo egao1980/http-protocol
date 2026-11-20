@@ -1,6 +1,18 @@
 (defpackage #:http-protocol
   (:use #:cl)
   (:export #:http-error
+           ;; secret header values (redacted when printed)
+           #:secret
+           #:secret-p
+           #:make-secret
+           #:reveal
+           #:*secret-header-names*
+           #:secret-header-name-p
+           #:protect-headers
+           #:redact-headers
+           #:reveal-headers
+           #:backend-keeps-secrets-p
+           #:reveal-request-secrets!
            #:http-protocol-error
            #:unsupported-content-coding
            #:unsupported-content-coding-coding
@@ -308,6 +320,8 @@
            #:with-data-serializer
            #:with-data-deserializer
            #:with-data-codec
+           #:make-secret
+           #:reveal
            #:*http-stream-buffer-size*
            #:*http-backend*
            #:*http-client*))

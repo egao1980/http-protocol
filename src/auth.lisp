@@ -10,13 +10,18 @@
 (defun %basic-b64 (user password)
   (encoding-protocol:encode (format nil "~A:~A" user password) :encoding :base64))
 
+(defun %maybe-secret (value secret-p)
+  (if secret-p (make-secret value) value))
+
 (defun authorization-header-value (auth)
   "Return Authorization header value, or NIL.
-   AUTH: NIL | string | (:basic user password) | (:bearer token).
+   AUTH: NIL | string | SECRET | (:basic user password) | (:bearer token).
+   Any part may be a SECRET; then the value is a SECRET too.
    (:digest …) signals UNSUPPORTED-OPERATION (P2)."
   (cond
     ((null auth) nil)
     ((stringp auth) auth)
+    ((secret-p auth) auth)
     ((not (consp auth))
      (error 'http-protocol-error
             :message (format nil "Invalid :auth ~S" auth)))
@@ -28,13 +33,15 @@
           (unless (and user password)
             (error 'http-protocol-error
                    :message ":auth (:basic user password) needs two args"))
-          (format nil "Basic ~A" (%basic-b64 user password))))
+          (%maybe-secret (format nil "Basic ~A" (%basic-b64 (reveal user) (reveal password)))
+                         (or (secret-p user) (secret-p password)))))
        (:bearer
         (let ((token (second auth)))
           (unless token
             (error 'http-protocol-error
                    :message ":auth (:bearer token) needs a token"))
-          (format nil "Bearer ~A" token)))
+          (%maybe-secret (format nil "Bearer ~A" (reveal token))
+                         (secret-p token))))
        (:digest
         (error 'unsupported-operation
                :operation :auth-digest

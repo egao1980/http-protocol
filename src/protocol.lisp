@@ -23,6 +23,27 @@
                              (cl-cookie:make-cookie-jar))
              keys*))))
 
+(defgeneric backend-keeps-secrets-p (backend)
+  (:documentation
+   "T when BACKEND keeps SECRET header values (and :auth parts) wrapped until
+    it writes them to the wire, so that its frames and conditions never hold
+    the plain credential. For any other backend the SEND / SEND-ASYNC :BEFORE
+    method unwraps them first (REVEAL), so old backends keep working.")
+  (:method ((backend t)) nil))
+
+(defun reveal-request-secrets! (client request)
+  "Unwrap SECRET values in REQUEST (and CLIENT) headers and :auth, in place.
+   Called for backends that do not KEEP-SECRETS."
+  (flet ((fix-headers (h) (if h (reveal-headers h) h)))
+    (setf (http-request-headers request) (fix-headers (http-request-headers request)))
+    (when (%auth-has-secret-p (http-request-auth request))
+      (setf (http-request-auth request) (%reveal-auth (http-request-auth request))))
+    (when client
+      (setf (http-client-headers client) (fix-headers (http-client-headers client)))
+      (when (%auth-has-secret-p (http-client-auth client))
+        (setf (http-client-auth client) (%reveal-auth (http-client-auth client)))))
+    request))
+
 (defgeneric send (backend client request &key)
   (:documentation
    "Perform REQUEST on CLIENT via BACKEND. Blocking → HTTP-RESPONSE.
@@ -34,6 +55,8 @@
   (:method :before ((backend http-backend) client request &key)
     (apply-client-base-url! client request)
     (finalize-request-url! request)
+    (unless (backend-keeps-secrets-p backend)
+      (reveal-request-secrets! client request))
     (let ((pref (effective-http-version client request)))
       (unless (backend-supports-http-version-p backend pref)
         (error 'http-version-not-available
@@ -62,6 +85,8 @@
     (declare (ignore callback error-callback))
     (apply-client-base-url! client request)
     (finalize-request-url! request)
+    (unless (backend-keeps-secrets-p backend)
+      (reveal-request-secrets! client request))
     (let ((pref (effective-http-version client request)))
       (unless (backend-supports-http-version-p backend pref)
         (error 'http-version-not-available

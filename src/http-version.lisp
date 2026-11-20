@@ -203,5 +203,7 @@
            (cons :authority (http2-authority host port scheme*)))
      (mapcar (lambda (pair)
                (cons (string-downcase (string (car pair)))
-                     (princ-to-string (cdr pair))))
+                     ;; HPACK needs the plain string: reveal SECRET values here
+                     (let ((v (reveal (cdr pair))))
+                       (if (stringp v) v (princ-to-string v)))))
              regular))))

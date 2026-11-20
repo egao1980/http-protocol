@@ -26,6 +26,24 @@ Facade package: `http` (`http:get`, `http:request`, …). Protocol package: `htt
              :files `(("f" . ,(http:make-http-file #(1 2 3) :filename "x.bin")))))
 ```
 
+## Credentials never print
+
+Wrap a credential with `make-secret`: it prints as `#<SECRET [redacted]>`
+in backtraces, condition reports and `describe`. `reveal` unwraps it.
+
+```lisp
+(http:post url :headers `(("authorization" . ,(http:make-secret "Bearer sk-…")))
+               :auth (list :bearer (http:make-secret token)))
+(http-protocol:redact-headers headers)   ; copy for logging
+(http-protocol:protect-headers headers)  ; wrap Authorization, Cookie, x-api-key, …
+```
+
+`http-request` and `http-client` print method and URL only, never headers or
+`:auth`. A backend that returns T from `backend-keeps-secrets-p`
+(http-backend-async does) keeps the values wrapped until it writes the wire.
+For any other backend, `send` / `send-async` unwrap them first, so older
+backends keep working.
+
 **Brief:** [cl-stack `docs/capabilities/http-protocol.md`](https://github.com/egao1980/cl-stack/blob/main/docs/capabilities/http-protocol.md)
 
 ## Tracking

@@ -1,5 +1,5 @@
 (defsystem "http-protocol"
-  :version "0.3.10"
+  :version "0.4.0"
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
@@ -9,6 +9,7 @@
   :pathname "src"
   :components ((:file "package")
                (:file "conditions")
+               (:file "secret")
                (:file "octet-stream")
                (:file "body-pipe")
                (:file "buffered-stream")
@@ -33,7 +34,9 @@
   :in-order-to ((test-op (test-op "http-protocol/tests"))))
 
 (defsystem "http-protocol/tests"
-  :depends-on ("http-protocol" "rove")
+  :depends-on ("http-protocol" "rove"
+               ;; proxy-test unsets env vars with sb-posix:unsetenv
+               (:feature :sbcl (:require "sb-posix")))
   :pathname "tests"
   :serial t
   :components ((:file "package")
@@ -46,6 +49,7 @@
                (:file "content-disposition-test")
                (:file "facade-test")
                (:file "auth-test")
+               (:file "secret-test")
                (:file "cookies-test")
                (:file "timeout-retry-test")
                (:file "proxy-test")

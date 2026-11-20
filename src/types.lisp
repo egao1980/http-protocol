@@ -186,3 +186,17 @@
 (defmacro with-http-client ((client) &body body)
   `(let ((*http-client* ,client))
      ,@body))
+
+;;; Printing: requests and clients show method / URL only. Headers and :auth
+;;; can hold credentials, so they never appear in a printed object (backtrace
+;;; frames, condition reports). Inspect them with REDACT-HEADERS.
+
+(defmethod print-object ((r http-request) stream)
+  (print-unreadable-object (r stream :type t :identity t)
+    (format stream "~A ~A"
+            (http-request-method r)
+            (if (slot-boundp r 'url) (http-request-url r) "<no url>"))))
+
+(defmethod print-object ((c http-client) stream)
+  (print-unreadable-object (c stream :type t :identity t)
+    (format stream "~@[~A~]" (http-client-base-url c))))

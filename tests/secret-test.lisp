@@ -121,6 +121,7 @@
       (http-error () nil))
     (ok (stringp report))
     (ok (plusp (length bt)))
-    (ok (search "REQUEST" (string-upcase bt)))
+    ;; SBCL names the frames; ECL prints a bare trace
+    #+sbcl (ok (search "REQUEST" (string-upcase bt)))
     (ok (%token-free-p report))
     (ok (%token-free-p bt))))

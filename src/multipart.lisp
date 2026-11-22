@@ -58,50 +58,64 @@
           (vector (length content))
           (stream nil)))))
 
+(defun %octets (string)
+  (encoding-protocol:encode string :encoding :utf-8))
+
+(defun %check-part-header-value (what value)
+  "A part Content-Type with CR, LF or another control character would end
+   the header line and forge headers: refuse it."
+  (when (find-if (lambda (c)
+                   (let ((code (char-code c)))
+                     (or (and (< code 32) (/= code 9)) (= code 127))))
+                 value)
+    (error 'http-protocol-error
+           :message (format nil "multipart part ~A contains a control character: ~S"
+                            what value)))
+  value)
+
+(defun %part-header-string (part)
+  "Content-Disposition (+ Content-Type) lines and the blank line for PART.
+   name / filename go through mime-protocol (RFC 7578 quoting, filename*
+   for non-ASCII), so they cannot inject parameters or headers."
+  (let ((ct (getf part :content-type))
+        (filename (let ((f (getf part :filename)))
+                    (typecase f
+                      (null nil)
+                      (pathname (file-namestring f))
+                      (t (string f))))))
+    (with-output-to-string (o)
+      (flet ((crlf () (write-char #\Return o) (write-char #\Newline o)))
+        (write-string "Content-Disposition: " o)
+        (write-string (mime-protocol:format-form-data-disposition
+                       (getf part :name) :filename filename)
+                      o)
+        (crlf)
+        (when ct
+          (write-string "Content-Type: " o)
+          (write-string (%check-part-header-value "Content-Type" ct) o)
+          (crlf))
+        (crlf)))))
+
 (defun multipart-content-length (parts boundary)
-  "Total Content-Length when every part length is known; else NIL."
-  (let ((blen (length boundary))
+  "Total Content-Length in octets when every part length is known; else NIL."
+  (let ((blen (length (%octets boundary)))
         (total 0))
     (dolist (part parts)
       (let ((body-len (%part-body-length part)))
         (unless body-len
           (return-from multipart-content-length nil))
-        (let* ((disp (format nil "Content-Disposition: form-data; name=\"~A\"~@[; filename=\"~A\"~]~C~C"
-                             (getf part :name)
-                             (getf part :filename)
-                             #\Return #\Newline))
-               (ct (getf part :content-type))
-               (ct-line (when ct
-                          (format nil "Content-Type: ~A~C~C" ct #\Return #\Newline))))
-          (incf total (+ 2 blen 2
-                         (length disp)
-                         (if ct-line (length ct-line) 0)
-                         2
-                         body-len
-                         2)))))
+        ;; --boundary CRLF, headers (UTF-8 octets), body, CRLF
+        (incf total (+ 2 blen 2
+                       (length (%octets (%part-header-string part)))
+                       body-len
+                       2))))
     ;; closing --boundary-- CRLF
     (+ total 2 blen 2 2)))
 
-(defun %octets (string)
-  (babel:string-to-octets string :encoding :utf-8))
-
 (defun %part-header-octets (part boundary)
-  (let ((out (make-array 128 :element-type '(unsigned-byte 8)
-                         :adjustable t :fill-pointer 0)))
-    (labels ((emit (oct)
-               (loop for b across oct do (vector-push-extend b out))))
-      (emit (%octets (format nil "--~A~C~C" boundary #\Return #\Newline)))
-      (emit (%octets
-             (format nil "Content-Disposition: form-data; name=\"~A\"~@[; filename=\"~A\"~]~C~C"
-                     (getf part :name)
-                     (getf part :filename)
-                     #\Return #\Newline)))
-      (when (getf part :content-type)
-        (emit (%octets (format nil "Content-Type: ~A~C~C"
-                               (getf part :content-type)
-                               #\Return #\Newline))))
-      (emit (%octets (format nil "~C~C" #\Return #\Newline)))
-      (coerce out '(simple-array (unsigned-byte 8) (*))))))
+  (concatenate '(simple-array (unsigned-byte 8) (*))
+               (%octets (format nil "--~A~C~C" boundary #\Return #\Newline))
+               (%octets (%part-header-string part))))
 
 ;;; Streaming multipart reader — phases: :header :body :crlf :next :end :done
 

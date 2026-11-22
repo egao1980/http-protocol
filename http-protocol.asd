@@ -1,10 +1,11 @@
 (defsystem "http-protocol"
-  :version "0.4.0"
+  :version "0.4.1"
   :description "CLOS HTTP client protocol for cl-stack (generics + Content-Encoding + facade)"
   :author "egao1980"
   :license "MIT"
   :depends-on ("trivial-gray-streams" "blackbird" "cl-cookie" "quri"
-               "encoding-protocol" "babel" "bordeaux-threads")
+               "encoding-protocol" (:version "mime-protocol" "0.2.0")
+               "babel" "bordeaux-threads")
   :serial t
   :pathname "src"
   :components ((:file "package")

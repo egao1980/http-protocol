@@ -87,3 +87,68 @@
         (declare (ignore extra clen))
         (ok (streamp wire))
         (ok (equalp (coerce-to-octets "abc") (slurp-octets wire)))))))
+
+;;; http-protocol#44: name / filename cannot inject; lengths are octets.
+
+(defun %mp-text (req)
+  "→ (values decoded-text octet-count content-length)."
+  (multiple-value-bind (stream extra clen) (prepare-request-body req)
+    (declare (ignore extra))
+    (let ((octets (slurp-octets stream)))
+      (values (encoding-protocol:decode octets :encoding :utf-8)
+              (length octets)
+              clen))))
+
+(defun %header-lines (text)
+  "Lines of TEXT split on CRLF."
+  (loop with start = 0
+        for pos = (search (format nil "~C~C" #\Return #\Newline) text :start2 start)
+        collect (subseq text start (or pos (length text)))
+        while pos
+        do (setf start (+ pos 2))))
+
+(deftest multipart-crlf-and-quotes-cannot-inject
+  (let* ((evil-name (format nil "f\"; filename=\"x.exe~C~CX-Injected: 1" #\Return #\Newline))
+         (evil-file (format nil "a.txt\"~C~CContent-Type: text/html~C~C~C~Cpwned"
+                            #\Return #\Newline #\Return #\Newline #\Return #\Newline))
+         (req (make-http-request :url "http://x"
+                                 :form-data `((,evil-name . "v"))
+                                 :files `(("upload" . (:content "data" :filename ,evil-file))))))
+    (multiple-value-bind (text n clen) (%mp-text req)
+      (let ((lines (%header-lines text)))
+        (ok (= n clen) "Content-Length matches the octets")
+        (ok (notany (lambda (l) (search "X-Injected" l :end2 (min 10 (length l)))) lines)
+            "no forged header line")
+        (ok (= 1 (count-if (lambda (l) (string= l "Content-Type: application/octet-stream")) lines))
+            "only the real Content-Type line")
+        (ok (notany (lambda (l) (string= l "Content-Type: text/html")) lines))
+        (ok (notany (lambda (l) (string= l "pwned")) lines) "no forged body")
+        (let ((disp (remove-if-not (lambda (l) (search "Content-Disposition:" l)) lines)))
+          (ok (= 2 (length disp)) "one disposition per part")
+          (ok (search "name=\"f%22; filename=%22x.exe%0D%0AX-Injected: 1\"" (first disp)))
+          (ok (search "filename=\"a.txt%22%0D%0AContent-Type: text/html%0D%0A%0D%0Apwned\""
+                      (second disp))))))))
+
+(deftest multipart-content-type-crlf-refused
+  (let ((req (make-http-request
+              :url "http://x"
+              :files `(("f" . (:content "x" :filename "a"
+                               :content-type ,(format nil "text/plain~C~CX: y"
+                                                      #\Return #\Newline)))))))
+    (ok (signals (prepare-request-body req) 'http-protocol-error))))
+
+(deftest multipart-non-ascii-filename
+  (let* ((name "résumé – 履歴書.pdf")
+         (req (make-http-request :url "http://x"
+                                 :form-data '(("título" . "ñ"))
+                                 :files `(("file" . (:content "%PDF" :filename ,name
+                                                     :content-type "application/pdf"))))))
+    (multiple-value-bind (text n clen) (%mp-text req)
+      (ok (integerp clen))
+      (ok (= n clen) "Content-Length counts UTF-8 octets, not characters")
+      (ok (> n (length text)) "fixture really is multi-byte")
+      (ok (search (format nil "filename=\"~A\"" name) text) "UTF-8 filename (RFC 7578 4.2)")
+      (ok (search (format nil "filename*=~A" (mime-protocol:encode-rfc5987-value name)) text)
+          "RFC 8187 filename*")
+      (ok (search "filename*=UTF-8''r%C3%A9sum%C3%A9%20%E2%80%93%20" text))
+      (ok (search "name=\"título\"" text)))))

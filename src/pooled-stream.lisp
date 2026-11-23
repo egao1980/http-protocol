@@ -18,6 +18,9 @@
                      :initform nil
                      :documentation "When T, never return to pool (Connection: close).")))
 
+(defmethod stream-element-type ((s pooled-body-stream))
+  '(unsigned-byte 8))
+
 (defun make-pooled-body-stream (source &key pool pool-key connection on-evict
                                          discard-on-close)
   (make-instance 'pooled-body-stream

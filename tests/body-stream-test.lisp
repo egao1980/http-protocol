@@ -121,3 +121,18 @@
     (write-body-pipe p #(1))
     (close-body-pipe p)
     (ok (= 2 n))))
+
+(deftest binary-body-streams-report-octet-element-type
+  "STREAM-ELEMENT-TYPE answers (unsigned-byte 8) for every binary body stream,
+   so a consumer can ask before choosing READ-CHAR or READ-BYTE (an OpenAI
+   error body arrived as a buffered stream and hit NO-APPLICABLE-METHOD)."
+  (flet ((octets-p (s) (equal '(unsigned-byte 8) (stream-element-type s))))
+    (with-open-stream (src (make-octet-input-stream #(1 2 3)))
+      (ok (octets-p src))
+      (with-open-stream (in (make-buffered-binary-input-stream src :close-source-p nil))
+        (ok (octets-p in))
+        (ok (= 1 (read-byte in)))))
+    (with-open-stream (s (make-multipart-form-stream (list (list :name "a" :content "x"))))
+      (ok (octets-p s)))
+    (with-open-stream (s (make-pooled-body-stream (make-octet-input-stream #(1))))
+      (ok (octets-p s)))))

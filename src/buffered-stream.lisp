@@ -17,6 +17,12 @@
    (close-source-p :initarg :close-source-p :initform t
                    :reader buffered-stream-close-source-p)))
 
+;; CL:STREAM-ELEMENT-TYPE has no default for binary Gray streams on SBCL:
+;; without this, a consumer asking "characters or octets?" (llm-protocol-openai
+;; reading an error body) gets NO-APPLICABLE-METHOD.
+(defmethod stream-element-type ((s buffered-binary-input-stream))
+  '(unsigned-byte 8))
+
 (defun make-buffered-binary-input-stream
     (source &key (buffer-size *http-stream-buffer-size*) (close-source-p t))
   "Wrap SOURCE in a binary input stream that refills a fixed BUFFER-SIZE buffer.

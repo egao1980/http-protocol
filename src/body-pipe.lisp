@@ -94,6 +94,9 @@
 (defmethod trivial-gray-streams:stream-listen ((s http-body-pipe))
   (http-body-pipe-listen s))
 
+(defmethod trivial-gray-streams:stream-clear-input ((s http-body-pipe))
+  nil)
+
 (defmethod trivial-gray-streams:stream-write-byte ((s http-body-pipe) byte)
   (write-body-pipe s (make-array 1 :element-type '(unsigned-byte 8)
                                  :initial-element byte))

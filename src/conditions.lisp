@@ -34,6 +34,25 @@
                      (http-error-message c)))))
 
 (define-condition http-connection-error (http-error) ())
+
+(define-condition http-incomplete-response (http-protocol-error http-connection-error)
+  ((octets :initarg :octets :initform nil
+           :reader http-incomplete-response-octets
+           :documentation "Response octets received before the connection
+ended (0: none at all), or NIL when the backend does not count them."))
+  (:default-initargs :message "incomplete HTTP response")
+  (:documentation
+   "The connection ended before the response was complete: no status line,
+    cut-off headers, or a body shorter than its framing (Content-Length,
+    chunked) promised. A transport failure, so HTTP-RETRY retries it, on the
+    READ budget, like a dropped connection. It is also an HTTP-PROTOCOL-ERROR,
+    which is what backends signalled before it had a type: existing handlers
+    still match.")
+  (:report (lambda (c s)
+             (format s "~A~@[ after ~D response octet~:P~]"
+                     (or (http-error-message c) "incomplete HTTP response")
+                     (http-incomplete-response-octets c)))))
+
 (define-condition http-timeout-error (http-error) ())
 (define-condition http-tls-error (http-error) ())
 (define-condition http-redirect-error (http-error) ())

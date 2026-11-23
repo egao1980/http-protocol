@@ -67,6 +67,10 @@
          (typecase condition
            (http-timeout-error
             (< (1- attempt) (or (retry-read retry) max-total)))
+           ;; The request went out and the response was cut off: a read
+           ;; failure (urllib3 counts its ProtocolError the same way).
+           (http-incomplete-response
+            (< (1- attempt) (or (retry-read retry) max-total)))
            (http-connection-error
             (< (1- attempt) (or (retry-connect retry) max-total)))
            (http-tls-error

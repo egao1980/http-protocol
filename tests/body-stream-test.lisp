@@ -136,3 +136,62 @@
       (ok (octets-p s)))
     (with-open-stream (s (make-pooled-body-stream (make-octet-input-stream #(1))))
       (ok (octets-p s)))))
+
+(defun %drain-octets (stream)
+  (loop for b = (read-byte stream nil nil) while b collect b))
+
+(deftest binary-body-streams-answer-standard-stream-functions
+  "#50 audit: each binary body stream answers the standard stream functions a
+   consumer may call on a body. SBCL's Gray defaults cover OPEN-STREAM-P and
+   the direction predicates; there STREAM-ELEMENT-TYPE, LISTEN and CLEAR-INPUT
+   had no binary method and signalled NO-APPLICABLE-METHOD."
+  (dolist (make (list (lambda () (make-octet-input-stream #(1 2 3)))
+                      (lambda () (make-buffered-binary-input-stream
+                                  (make-octet-input-stream #(1 2 3))
+                                  :buffer-size 2))
+                      (lambda () (make-pooled-body-stream
+                                  (make-octet-input-stream #(1 2 3))))
+                      (lambda () (make-multipart-form-stream
+                                  (list (list :name "a" :content "x"))))))
+    (let ((s (funcall make)))
+      (testing (string-downcase (symbol-name (type-of s)))
+        (ok (equal '(unsigned-byte 8) (stream-element-type s)))
+        (ok (input-stream-p s))
+        (ok (not (output-stream-p s)))
+        (ok (open-stream-p s))
+        (ok (null (clear-input s)) "CLEAR-INPUT is a no-op")
+        (ok (listen s) "an octet is ready before EOF")
+        (ok (plusp (length (%drain-octets s))) "CLEAR-INPUT dropped nothing")
+        (ok (not (listen s)) "LISTEN is false at EOF")
+        (close s)
+        (ok (not (open-stream-p s)))
+        (ok (not (listen s)) "LISTEN is false once closed"))))
+  (let ((p (make-http-body-pipe)))
+    (ok (equal '(unsigned-byte 8) (stream-element-type p)))
+    (ok (and (input-stream-p p) (output-stream-p p)))
+    (ok (null (clear-input p)))
+    (close p)
+    (ok (not (open-stream-p p)))))
+
+(deftest error-body-reads-through-buffered-stream
+  "#50: a 401 from api.anthropic.com arrives as a buffered body stream. The
+   provider asks its element type, reads octets and gets the error JSON (it
+   crashed with NO-APPLICABLE-METHOD on STREAM-ELEMENT-TYPE instead)."
+  (let* ((json "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}")
+         (headers (let ((ht (make-hash-table :test #'equal)))
+                    (setf (gethash "content-type" ht) "application/json")
+                    ht))
+         (res (make-instance 'http-response
+                             :status 401 :headers headers
+                             :body (wrap-response-body-stream
+                                    (make-octet-input-stream
+                                     (babel:string-to-octets json :encoding :utf-8))
+                                    headers)))
+         (body (response-body res)))
+    (ok (typep body 'buffered-binary-input-stream))
+    ;; llm-protocol-anthropic / -openai %COERCE-BODY-STRING
+    (ok (not (subtypep (stream-element-type body) 'character)))
+    (ok (string= json (babel:octets-to-string
+                       (coerce (%drain-octets body) '(vector (unsigned-byte 8)))
+                       :encoding :utf-8)))
+    (close body)))

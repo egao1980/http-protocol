@@ -3,3 +3,5 @@
 qlfile.lock
 /lib/
 /build/
+cl-repo.lock
+.cl-repository/

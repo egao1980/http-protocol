@@ -39,3 +39,23 @@
          (res (make-instance 'http-response :status 503 :headers ht :body #())))
     (setf (gethash "retry-after" ht) "7")
     (ok (= 7.0d0 (retry-delay-seconds r 1 :response res)))))
+
+(deftest incomplete-response-is-a-retried-read-failure
+  "http-backend-async#64: a response cut off by EOF is HTTP-INCOMPLETE-RESPONSE,
+   both a connection error (retried) and the protocol error it used to be."
+  (let ((c (make-condition 'http-incomplete-response :octets 12)))
+    (ok (typep c 'http-connection-error))
+    (ok (typep c 'http-protocol-error))
+    (ok (eql 12 (http-incomplete-response-octets c)))
+    (ok (search "incomplete HTTP response after 12 response octets"
+                (princ-to-string c))))
+  (ok (string= "incomplete HTTP response"
+               (princ-to-string (make-condition 'http-incomplete-response))))
+  (let ((c (make-condition 'http-incomplete-response :octets 0))
+        (r (make-http-retry :total 3 :read 1 :connect 3)))
+    (ok (retry-should-retry-p r 1 :get :condition c))
+    (ok (not (retry-should-retry-p r 2 :get :condition c))
+        "counted on the READ budget, not CONNECT")
+    (ok (not (retry-should-retry-p r 1 :post :condition c))
+        "a POST is not resent")
+    (ok (not (retry-should-retry-p (coerce-retry nil) 1 :get :condition c)))))

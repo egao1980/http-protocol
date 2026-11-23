@@ -9,6 +9,14 @@
 (defmethod stream-element-type ((s octet-input-stream))
   '(unsigned-byte 8))
 
+(defmethod trivial-gray-streams:stream-listen ((s octet-input-stream))
+  "In memory: an octet is available until EOF."
+  (and (open-stream-p s)
+       (< (octet-input-stream-pos s) (length (octet-input-stream-data s)))))
+
+(defmethod trivial-gray-streams:stream-clear-input ((s octet-input-stream))
+  nil)
+
 (defun make-octet-input-stream (octets)
   "Binary input stream over OCTETS (copied to a simple-array)."
   (make-instance 'octet-input-stream

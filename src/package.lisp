@@ -22,6 +22,8 @@
            #:http-version-not-available-requested
            #:http-version-not-available-negotiated
            #:http-connection-error
+           #:http-incomplete-response
+           #:http-incomplete-response-octets
            #:http-timeout-error
            #:http-tls-error
            #:http-redirect-error

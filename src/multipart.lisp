@@ -133,6 +133,15 @@
 (defmethod stream-element-type ((s multipart-form-stream))
   '(unsigned-byte 8))
 
+(defmethod trivial-gray-streams:stream-listen ((s multipart-form-stream))
+  "True until the closing boundary was read: the next octet is a boundary or
+   header octet, or comes from a part's content."
+  (and (open-stream-p s)
+       (not (eq (multipart-phase s) :done))))
+
+(defmethod trivial-gray-streams:stream-clear-input ((s multipart-form-stream))
+  nil)
+
 (defun make-multipart-form-stream (parts &key (boundary (make-multipart-boundary)))
   "Binary input stream yielding multipart/form-data for PARTS (plist list)."
   (make-instance 'multipart-form-stream :parts parts :boundary boundary))

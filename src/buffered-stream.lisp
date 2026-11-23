@@ -23,6 +23,21 @@
 (defmethod stream-element-type ((s buffered-binary-input-stream))
   '(unsigned-byte 8))
 
+;; Same gap for CL:LISTEN and CL:CLEAR-INPUT: SBCL's STREAM-LISTEN and
+;; STREAM-CLEAR-INPUT defaults are on character streams only.
+(defmethod trivial-gray-streams:stream-listen ((s buffered-binary-input-stream))
+  "True when an octet can be read without blocking: one is buffered, or the
+   source has one. False at EOF and once closed, as CL:LISTEN specifies."
+  (and (open-stream-p s)
+       (or (< (buffered-stream-start s) (buffered-stream-end s))
+           (and (not (buffered-stream-eof-p s))
+                (listen (buffered-stream-source s))))))
+
+(defmethod trivial-gray-streams:stream-clear-input ((s buffered-binary-input-stream))
+  "No-op, like SBCL's default for character streams: a body is not
+   interactive, and dropping buffered octets would only lose body data."
+  nil)
+
 (defun make-buffered-binary-input-stream
     (source &key (buffer-size *http-stream-buffer-size*) (close-source-p t))
   "Wrap SOURCE in a binary input stream that refills a fixed BUFFER-SIZE buffer.

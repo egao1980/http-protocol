@@ -21,6 +21,14 @@
 (defmethod stream-element-type ((s pooled-body-stream))
   '(unsigned-byte 8))
 
+(defmethod trivial-gray-streams:stream-listen ((s pooled-body-stream))
+  "Asks the source; false once the body ended and the connection went back."
+  (let ((src (pooled-stream-source s)))
+    (and src (open-stream-p s) (listen src))))
+
+(defmethod trivial-gray-streams:stream-clear-input ((s pooled-body-stream))
+  nil)
+
 (defun make-pooled-body-stream (source &key pool pool-key connection on-evict
                                          discard-on-close)
   (make-instance 'pooled-body-stream

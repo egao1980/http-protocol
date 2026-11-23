@@ -6,6 +6,9 @@
   ((data :initarg :data :reader octet-input-stream-data)
    (pos :initform 0 :accessor octet-input-stream-pos)))
 
+(defmethod stream-element-type ((s octet-input-stream))
+  '(unsigned-byte 8))
+
 (defun make-octet-input-stream (octets)
   "Binary input stream over OCTETS (copied to a simple-array)."
   (make-instance 'octet-input-stream

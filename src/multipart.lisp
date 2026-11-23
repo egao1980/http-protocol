@@ -130,6 +130,9 @@
    (body-stream :initform nil :accessor multipart-body-stream)
    (close-body-p :initform nil :accessor multipart-close-body-p)))
 
+(defmethod stream-element-type ((s multipart-form-stream))
+  '(unsigned-byte 8))
+
 (defun make-multipart-form-stream (parts &key (boundary (make-multipart-boundary)))
   "Binary input stream yielding multipart/form-data for PARTS (plist list)."
   (make-instance 'multipart-form-stream :parts parts :boundary boundary))

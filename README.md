@@ -23,8 +23,26 @@ Facade package: `http` (`http:get`, `http:request`, …). Protocol package: `htt
     (http:post "https://example.com/" :data ht :data-type :json)
     (http:response-data (http:get "https://example.com/") :json))
   (http:post "https://example.com/"
-             :files `(("f" . ,(http:make-http-file #(1 2 3) :filename "x.bin")))))
+             :files `(("f" . ,(http:make-http-file (http-protocol:coerce-to-octets "abc")
+                                                   :filename "x.bin")))))
 ```
+
+## Multipart
+
+`:files` / `:form-data` content is a binary input stream, a string (sent as
+UTF-8) or a vector of `(unsigned-byte 8)`. Anything else, `(vector 1 2)`
+included, signals `http-protocol-error` where the file or part is made
+(`make-http-file`, `build-multipart-parts`), not later on the wire.
+
+Boundaries are `----cl-stack-` and 32 hex digits (128 bits). They come from a
+process-local `random-state` seeded by `(make-random-state t)` on first use,
+never from `cl:*random-state*` (the same in every fresh SBCL image), and the
+state is cleared before an image is saved. `make-multipart-body` checks that
+`--boundary` occurs in no in-memory part (string or octets, headers included)
+and draws another when it does (RFC 2046 §5.1.1), so use the Content-Type and
+boundary it returns. A `:boundary` you pass must be 1-70 RFC 2046 bchars.
+Stream content cannot be scanned in advance: for stream parts the body relies
+on the 128 random bits alone.
 
 ## Credentials never print
 

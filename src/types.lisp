@@ -56,9 +56,26 @@
 
 (defun http-file-p (x) (typep x 'http-file))
 
+(defun %check-body-content (content what &key (allow-null t))
+  "CONTENT of an HTTP-FILE or a multipart part, when it is a stream, a string
+   (sent as UTF-8), a vector of (UNSIGNED-BYTE 8), or NIL with ALLOW-NULL.
+   Anything else → HTTP-PROTOCOL-ERROR naming WHAT and CONTENT's type (never
+   CONTENT itself: it may be large or secret)."
+  (unless (or (streamp content)
+              (stringp content)
+              (typep content '(vector (unsigned-byte 8)))
+              (and allow-null (null content)))
+    (error 'http-protocol-error
+           :message (format nil "~A must be a stream, a string or a vector of ~
+                                 (unsigned-byte 8), not ~S"
+                            what (type-of content))))
+  content)
+
 (defun make-http-file (content &key filename content-type content-length field-name)
-  "Build an HTTP-FILE. CONTENT must be a stream, octet vector, or string."
-  (check-type content (or stream string vector))
+  "Build an HTTP-FILE. CONTENT is a binary input stream, a string (sent as
+   UTF-8) or a vector of (UNSIGNED-BYTE 8). Anything else, a vector of other
+   elements included, → HTTP-PROTOCOL-ERROR here (http-protocol#57)."
+  (%check-body-content content "HTTP-FILE content" :allow-null nil)
   (make-instance 'http-file
                  :content content
                  :filename filename
@@ -154,7 +171,8 @@
   "Wrap RESPONSE body as an HTTP-FILE (stream when :want-stream was used).
 
    FILENAME defaults to Content-Disposition (RFC 6266 §4.3 / RFC 8187)."
-  (make-http-file (or (response-body response) #())
+  (make-http-file (or (response-body response)
+                      (make-array 0 :element-type '(unsigned-byte 8)))
                   :filename (or filename
                                 (content-disposition-filename
                                  (response-header response "content-disposition")))

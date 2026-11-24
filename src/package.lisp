@@ -274,7 +274,12 @@
            #:make-pooled-body-stream
            #:pooled-stream-source
            #:pooled-stream-connection
-           #:release-response-connection))
+           #:release-response-connection
+           #:proxy-tls-unsupported
+           #:proxy-tls-unsupported-proxy
+           #:proxy-tls-unsupported-backend
+           #:proxy-tls-p
+           #:redact-proxy-url))
 
 (defpackage #:http
   (:use #:cl #:http-protocol)

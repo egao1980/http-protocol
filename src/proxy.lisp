@@ -512,19 +512,49 @@
   (member (normalize-proxy-scheme scheme) '("http" "https") :test #'string=))
 
 (defun proxy-kind (proxy-url)
-  "Classify PROXY-URL → :HTTP | :SOCKS5 | :SOCKS4 | NIL."
+  "Classify PROXY-URL → :HTTP | :HTTPS | :SOCKS5 | :SOCKS4 | NIL.
+
+   :HTTPS is an HTTP proxy reached over TLS (https://proxy:443, as
+   HTTPS_PROXY=https://… names one). The client speaks TLS to the proxy,
+   verified against the proxy's host name, and sends CONNECT or the
+   absolute-form request inside it, as curl (7.52+), urllib3 (1.26+) and
+   httpx do. It is never an :HTTP proxy: a backend that dials it in plain TCP
+   sends the request line and Proxy-Authorization in cleartext (#53). A
+   backend that cannot speak TLS to the proxy signals PROXY-TLS-UNSUPPORTED.
+   An unknown scheme stays :HTTP."
   (cond
-    ((null proxy-url) nil)
-    (t
-     (let ((s (normalize-proxy-scheme
-               (quri:uri-scheme (quri:uri (if (stringp proxy-url)
-                                              proxy-url
-                                              (princ-to-string proxy-url)))))))
-       (cond
-         ((member s '("socks" "socks5" "socks5h") :test #'string=) :socks5)
-         ((member s '("socks4" "socks4a") :test #'string=) :socks4)
-         ((http-proxy-scheme-p s) :http)
-         (t :http))))))
+   ((null proxy-url) nil)
+   (t
+    (let ((s (normalize-proxy-scheme
+              (quri:uri-scheme (quri:uri (if (stringp proxy-url)
+                                             proxy-url
+                                             (princ-to-string proxy-url)))))))
+      (cond
+       ((member s '("socks" "socks5" "socks5h") :test #'string=) :socks5)
+       ((member s '("socks4" "socks4a") :test #'string=) :socks4)
+       ((string= s "https") :https)
+       ((http-proxy-scheme-p s) :http)
+       (t :http))))))
+
+(defun proxy-tls-p (proxy-url)
+  "True when PROXY-URL is an https:// proxy: the hop to it is TLS (see
+   PROXY-KIND :HTTPS)."
+  (eq (proxy-kind proxy-url) :https))
+
+(defun redact-proxy-url (proxy-url)
+  "PROXY-URL (a string or a QURI:URI) as a string without its userinfo, for
+   conditions and logs: the user and password a proxy URL carries never
+   print. NIL stays NIL."
+  (when proxy-url
+    (let ((u (quri:uri (if (stringp proxy-url)
+                           proxy-url
+                           (princ-to-string proxy-url)))))
+      (if (quri:uri-userinfo u)
+          (quri:render-uri (quri:make-uri :scheme (quri:uri-scheme u)
+                                          :host (quri:uri-host u)
+                                          :port (quri:uri-port u)
+                                          :path (quri:uri-path u)))
+          (quri:render-uri u)))))
 
 (defun socks-remote-dns-p (scheme)
   "True when the proxy should resolve the hostname (socks5h / socks4a)."

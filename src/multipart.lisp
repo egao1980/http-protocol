@@ -10,44 +10,76 @@
 
 (defun normalize-multipart-file (name value)
   "Normalize a :FILES entry → part plist for the multipart encoder.
-   VALUE is http-file | stream | octets | string | plist with :content."
+   VALUE is http-file | stream | octets | string | plist with :content.
+   Content of another type (a vector of other elements included) →
+   HTTP-PROTOCOL-ERROR here, not when the body is streamed (http-protocol#57)."
   (let ((field (or (and (http-file-p value) (http-file-field-name value))
                    (%stringify-field-name name))))
-    (labels ((from-content (content &key filename content-type content-length)
-               (check-type content (or stream string vector null))
+    (labels ((missing ()
+               (error 'http-protocol-error
+                      :message (format nil "files entry ~A missing :content" field)))
+             (from-content (content &key filename content-type content-length)
+               (%check-body-content content (format nil "files entry ~A content" field))
                (list :name field
                      :filename (or filename "blob")
                      :content-type (or content-type "application/octet-stream")
                      :content-length content-length
                      :content content)))
-      (ctypecase value
+      (typecase value
         (http-file
          (from-content (http-file-content value)
                        :filename (http-file-filename value)
                        :content-type (http-file-content-type value)
                        :content-length (http-file-content-length value)))
-        (stream (from-content value))
-        ((or string vector) (from-content value))
+        (null (missing))
         (cons
-         (from-content (or (getf value :content)
-                           (error 'http-protocol-error
-                                  :message (format nil "files entry ~A missing :content"
-                                                   field)))
+         (from-content (or (getf value :content) (missing))
                        :filename (getf value :filename)
                        :content-type (getf value :content-type)
-                       :content-length (getf value :content-length)))))))
+                       :content-length (getf value :content-length)))
+        (t (from-content value))))))
 
 (defun normalize-multipart-data (data)
-  "DATA alist ((name . value)…) of string/octets fields → part plists."
+  "DATA alist ((name . value)…) of string/octets fields → part plists.
+   A value of another type → HTTP-PROTOCOL-ERROR here (http-protocol#57)."
   (mapcar (lambda (pair)
-            (list :name (%stringify-field-name (car pair))
-                  :filename nil
-                  :content-type nil
-                  :content (cdr pair)))
+            (let ((name (%stringify-field-name (car pair))))
+              (list :name name
+                    :filename nil
+                    :content-type nil
+                    :content (%check-body-content
+                              (cdr pair) (format nil "multipart field ~A" name)))))
           data))
 
+(defvar *boundary-random-state* nil
+  "RANDOM-STATE that multipart boundaries are drawn from: process-local, seeded
+   by (MAKE-RANDOM-STATE T) on first use (http-protocol#56). Not
+   CL:*RANDOM-STATE*, which starts out the same in every fresh SBCL image, so
+   the first boundary of each process would be the same string. Cleared before
+   an image is saved, so each run of a saved image seeds its own.")
+
+(defvar *boundary-lock* (bt:make-lock "http-protocol multipart boundary")
+  "Held while a boundary is drawn: a RANDOM-STATE is not safe to share
+   between threads.")
+
+(defun %reset-boundary-random-state ()
+  "Forget the boundary state; the next boundary seeds a fresh one. Runs
+   before an image is saved."
+  (setf *boundary-random-state* nil))
+
+#+sbcl (pushnew '%reset-boundary-random-state sb-ext:*save-hooks*)
+
 (defun make-multipart-boundary ()
-  (format nil "----cl-stack-~A" (random (expt 36 10))))
+  "A fresh boundary: \"----cl-stack-\" and 32 lowercase hex digits, 128 bits
+   drawn from *BOUNDARY-RANDOM-STATE* (http-protocol#56). 45 characters, all
+   RFC 2046 bchars and HTTP token characters, so Content-Type needs no quotes.
+   MAKE-MULTIPART-BODY scans in-memory parts for it; streamed parts cannot be
+   scanned in advance and rely on these 128 random bits alone."
+  (let ((n (bt:with-lock-held (*boundary-lock*)
+             (random (ash 1 128)
+                     (or *boundary-random-state*
+                         (setf *boundary-random-state* (make-random-state t)))))))
+    (format nil "----cl-stack-~(~32,'0x~)" n)))
 
 (defun %part-body-length (part)
   (or (getf part :content-length)
@@ -55,7 +87,7 @@
         (ctypecase content
           (null 0)
           (string (length (babel:string-to-octets content :encoding :utf-8)))
-          (vector (length content))
+          ((vector (unsigned-byte 8)) (length content))
           (stream nil)))))
 
 (defun %octets (string)
@@ -95,6 +127,68 @@
           (write-string (%check-part-header-value "Content-Type" ct) o)
           (crlf))
         (crlf)))))
+
+(defun %multipart-bchar-p (char)
+  "RFC 2046 5.1.1 bchars: DIGIT / ALPHA / ' ( ) + _ , - . / : = ? / space."
+  (and (< (char-code char) 128)
+       (or (alphanumericp char) (find char "'()+_,-./:=? "))))
+
+(defun %check-multipart-boundary (boundary)
+  "BOUNDARY when it is 1-70 bchars and does not end in a space (RFC 2046
+   5.1.1), else HTTP-PROTOCOL-ERROR."
+  (unless (and (stringp boundary)
+               (<= 1 (length boundary) 70)
+               (every #'%multipart-bchar-p boundary)
+               (char/= #\Space (char boundary (1- (length boundary)))))
+    (error 'http-protocol-error
+           :message (format nil "multipart boundary ~S is not 1-70 RFC 2046 ~
+                                 bchars ending in a non-space"
+                            boundary)))
+  boundary)
+
+(defun %part-contains-delimiter-p (part delimiter delimiter-octets)
+  "True when DELIMITER (\"--\" and the boundary) occurs in PART's header lines
+   or in its in-memory content. A string is searched as characters: the
+   delimiter is ASCII, so that equals searching its UTF-8 octets. Stream
+   content cannot be scanned in advance and is not."
+  (let ((content (getf part :content)))
+    (or (search delimiter (%part-header-string part))
+        (typecase content
+          (string (search delimiter content))
+          ((vector (unsigned-byte 8)) (search delimiter-octets content))))))
+
+(defun %choose-multipart-boundary (parts boundary &key (replace t))
+  "A boundary whose delimiter occurs in no in-memory part of PARTS (RFC 2046
+   5.1.1). BOUNDARY, when given, is checked by %CHECK-MULTIPART-BOUNDARY and
+   used unless it occurs in a part: then REPLACE draws a fresh one, and a NIL
+   REPLACE signals HTTP-PROTOCOL-ERROR. Without BOUNDARY, a drawn boundary
+   that occurs in a part is drawn again. Streamed parts are not scanned: they
+   rely on the 128 random bits of MAKE-MULTIPART-BOUNDARY."
+  (when boundary
+    (%check-multipart-boundary boundary))
+  (flet ((free-p (candidate)
+           (let* ((delimiter (concatenate 'string "--" candidate))
+                  (octets (%octets delimiter)))
+             (notany (lambda (part) (%part-contains-delimiter-p part delimiter octets))
+                     parts))))
+    (cond ((and boundary (free-p boundary)) boundary)
+          ((and boundary (not replace))
+           (error 'http-protocol-error
+                  :message (format nil "multipart boundary ~S occurs in a part" boundary)))
+          (t
+           (loop for attempt from 1 to 8
+                 for candidate = (make-multipart-boundary)
+                 when (free-p candidate)
+                   return candidate
+                 finally (error 'http-protocol-error
+                                :message "8 drawn multipart boundaries all occur in a part"))))))
+
+(defun %multipart-content-type (boundary)
+  "Content-Type for a multipart/form-data body with BOUNDARY; mime-protocol
+   quotes a boundary that is not an HTTP token."
+  (mime-protocol:format-media-type
+   (mime-protocol:make-media-type "multipart" "form-data"
+                                  (list (cons "boundary" boundary)))))
 
 (defun multipart-content-length (parts boundary)
   "Total Content-Length in octets when every part length is known; else NIL."
@@ -142,9 +236,19 @@
 (defmethod trivial-gray-streams:stream-clear-input ((s multipart-form-stream))
   nil)
 
-(defun make-multipart-form-stream (parts &key (boundary (make-multipart-boundary)))
-  "Binary input stream yielding multipart/form-data for PARTS (plist list)."
-  (make-instance 'multipart-form-stream :parts parts :boundary boundary))
+(defun make-multipart-form-stream (parts &key boundary)
+  "Binary input stream yielding multipart/form-data for PARTS (plist list).
+
+   Without BOUNDARY a fresh one is drawn whose delimiter occurs in no
+   in-memory part (string or octets, headers included); MULTIPART-BOUNDARY
+   of the stream returns it. A given BOUNDARY must be 1-70 RFC 2046 bchars,
+   and one that occurs in an in-memory part → HTTP-PROTOCOL-ERROR (the caller
+   holds it, so it cannot be swapped here; MAKE-MULTIPART-BODY swaps it).
+   Stream content cannot be scanned in advance: it relies on the 128 random
+   bits of a drawn boundary (http-protocol#56)."
+  (make-instance 'multipart-form-stream
+                 :parts parts
+                 :boundary (%choose-multipart-boundary parts boundary :replace nil)))
 
 (defun %multipart-open-body (content)
   "Return (values binary-input-stream close-p). CONTENT is never a pathname."
@@ -154,10 +258,12 @@
      (values (make-octet-input-stream
               (babel:string-to-octets content :encoding :utf-8))
              t))
-    (vector
+    ((vector (unsigned-byte 8))
      (values (make-octet-input-stream content) t))
     (null
-     (values (make-octet-input-stream #()) t))))
+     (values (make-octet-input-stream
+              (make-array 0 :element-type '(unsigned-byte 8)))
+             t))))
 
 (defun %multipart-close-body (s)
   (when (multipart-close-body-p s)
@@ -270,12 +376,20 @@
                      files)))))
 
 (defun make-multipart-body (data files &key boundary)
-  "Returns (values stream content-type-header content-length-or-nil boundary)."
-  (let* ((boundary (or boundary (make-multipart-boundary)))
-         (parts (build-multipart-parts data files))
+  "Returns (values stream content-type-header content-length-or-nil boundary).
+
+   BOUNDARY defaults to a fresh MAKE-MULTIPART-BOUNDARY; a given one must be
+   1-70 RFC 2046 bchars (else HTTP-PROTOCOL-ERROR). A boundary whose
+   delimiter (\"--\" and the boundary) occurs in an in-memory part (string or
+   octets, headers included) is replaced by a fresh one (RFC 2046 5.1.1,
+   http-protocol#56), so use the returned Content-Type and boundary. Stream
+   content cannot be scanned in advance: it relies on the 128 random bits of
+   a drawn boundary."
+  (let* ((parts (build-multipart-parts data files))
+         (boundary (%choose-multipart-boundary parts boundary))
          (stream (make-buffered-binary-input-stream
-                  (make-multipart-form-stream parts :boundary boundary)))
-         (ct (format nil "multipart/form-data; boundary=~A" boundary))
+                  (make-instance 'multipart-form-stream :parts parts :boundary boundary)))
+         (ct (%multipart-content-type boundary))
          (clen (multipart-content-length parts boundary)))
     (values stream ct clen boundary)))
 

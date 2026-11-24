@@ -67,7 +67,11 @@
    before an image is saved."
   (setf *boundary-random-state* nil))
 
-#+sbcl (pushnew '%reset-boundary-random-state sb-ext:*save-hooks*)
+(progn
+  ;; uiop:dump-image saves through save-lisp-and-die on SBCL, so SBCL's own
+  ;; hook covers both ways to save; the UIOP hook serves the other Lisps.
+  #+sbcl (pushnew '%reset-boundary-random-state sb-ext:*save-hooks*)
+  #-sbcl (uiop:register-image-dump-hook '%reset-boundary-random-state))
 
 (defun make-multipart-boundary ()
   "A fresh boundary: \"----cl-stack-\" and 32 lowercase hex digits, 128 bits

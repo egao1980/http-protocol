@@ -226,6 +226,61 @@
   (ok (socks-proxy-scheme-p "socks"))
   (ok (http-proxy-scheme-p "http")))
 
+(deftest https-proxy-kind-is-tls
+  (testing "an https:// proxy is reached over TLS, never classed as a plain HTTP proxy (#53)"
+    (ok (eq :https (proxy-kind "https://user:secret@proxy.corp:443")))
+    (ok (eq :https (proxy-kind "HTTPS://proxy.corp")))
+    (ok (eq :https (proxy-kind (quri:uri "https://proxy.corp:8443"))))
+    (ok (eq :http (proxy-kind "http://proxy.corp:3128")))
+    (ok (null (proxy-kind nil))))
+  (testing "PROXY-TLS-P"
+    (ok (proxy-tls-p "https://proxy.corp"))
+    (ok (not (proxy-tls-p "http://proxy.corp:3128")))
+    (ok (not (proxy-tls-p "socks5h://proxy:1080")))
+    (ok (not (proxy-tls-p nil))))
+  (testing "the default port of an https:// proxy is 443"
+    (multiple-value-bind (scheme host port user pass)
+        (parse-proxy-uri "https://user:secret@proxy.corp")
+      (ok (string= "https" scheme))
+      (ok (string= "proxy.corp" host))
+      (ok (= 443 port))
+      (ok (string= "user" user))
+      (ok (string= "secret" pass))))
+  (testing "an HTTPS_PROXY=https://… environment value stays an https:// proxy"
+    (with-env (("https_proxy" "https://user:secret@proxy.corp:443")
+               ("HTTPS_PROXY" nil)
+               ("http_proxy" nil) ("HTTP_PROXY" nil)
+               ("all_proxy" nil) ("ALL_PROXY" nil)
+               ("no_proxy" nil) ("NO_PROXY" nil))
+      (let ((cfg (make-http-proxy-config)))
+        (ok (eq :https (proxy-kind (resolve-proxy cfg "https://origin.test/"))))
+        (ok (eq :https (proxy-kind (resolve-proxy cfg "http://origin.test/"))))))))
+
+(deftest redact-proxy-url-drops-userinfo
+  (ok (string= "https://proxy.corp:8443"
+               (string-right-trim "/" (redact-proxy-url "https://user:secret@proxy.corp:8443"))))
+  (ok (not (search "secret" (redact-proxy-url "https://user:secret@proxy.corp:8443"))))
+  (ok (not (search "user" (redact-proxy-url (quri:uri "https://user:secret@proxy.corp")))))
+  (ok (search "proxy.corp" (redact-proxy-url "http://proxy.corp:3128")))
+  (ok (null (redact-proxy-url nil))))
+
+(deftest proxy-tls-unsupported-condition
+  (let ((c (make-condition 'proxy-tls-unsupported
+                           :proxy "https://user:secret@proxy.corp:443"
+                           :backend "test-backend")))
+    (ok (typep c 'unsupported-operation)
+        "an UNSUPPORTED-OPERATION, which existing handlers already match")
+    (ok (typep c 'http-protocol-error))
+    (ok (eq :https-proxy (unsupported-operation-operation c)))
+    (ok (string= "test-backend" (proxy-tls-unsupported-backend c)))
+    (let ((text (princ-to-string c)))
+      (ok (search "proxy.corp" text))
+      (ok (search "test-backend" text))
+      (ok (not (search "secret" text)) "the report never prints the proxy password")
+      (ok (not (search "user:" text)))))
+  (ok (signals (error 'proxy-tls-unsupported :proxy "https://proxy.corp")
+        'unsupported-operation)))
+
 (deftest configure-proxy-script-manual
   (let ((cfg (make-http-proxy-config :system nil)))
     (ok (signals (configure-proxy-script cfg :url "http://wpad/wpad.dat")

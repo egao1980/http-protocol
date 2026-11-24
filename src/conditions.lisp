@@ -33,6 +33,27 @@
                      (http-version-not-available-negotiated c)
                      (http-error-message c)))))
 
+(define-condition proxy-tls-unsupported (unsupported-operation)
+  ((proxy :initarg :proxy :initform nil :reader proxy-tls-unsupported-proxy
+          :documentation "The https:// proxy URL, without userinfo
+           (REDACT-PROXY-URL). The report redacts it again.")
+   (backend :initarg :backend :initform nil :reader proxy-tls-unsupported-backend
+            :documentation "Name of the backend that refused, or NIL."))
+  (:default-initargs :operation :https-proxy)
+  (:documentation
+   "The backend cannot speak TLS to an https:// proxy (PROXY-KIND :HTTPS), so
+    it refuses the request instead of sending the request line and
+    Proxy-Authorization to the proxy in cleartext (#53). Signalled before any
+    octet goes to the proxy. Backends establish USE-VALUE (another proxy URL,
+    or NIL for a direct connection) where they can take one.")
+  (:report (lambda (c s)
+             (format s "~@[~A: ~]cannot speak TLS to the https:// proxy~@[ ~A~]; ~
+                        refusing to send the request and its proxy credentials ~
+                        in cleartext~@[ — ~A~]"
+                     (proxy-tls-unsupported-backend c)
+                     (redact-proxy-url (proxy-tls-unsupported-proxy c))
+                     (http-error-message c)))))
+
 (define-condition http-connection-error (http-error) ())
 
 (define-condition http-incomplete-response (http-protocol-error http-connection-error)

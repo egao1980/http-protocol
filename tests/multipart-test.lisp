@@ -148,9 +148,9 @@
       (ok (= n clen) "Content-Length counts UTF-8 octets, not characters")
       (ok (> n (length text)) "fixture really is multi-byte")
       (ok (search (format nil "filename=\"~A\"" name) text) "UTF-8 filename (RFC 7578 4.2)")
-      (ok (search (format nil "filename*=~A" (mime-protocol:encode-rfc5987-value name)) text)
-          "RFC 8187 filename*")
-      (ok (search "filename*=UTF-8''r%C3%A9sum%C3%A9%20%E2%80%93%20" text))
+      ;; mime-protocol 0.3.6 (mime-protocol#21): RFC 7578 4.2 has no filename*
+      ;; in form-data, and a differing one is refused on parse.
+      (ng (search "filename*" text) "no filename*, as browsers send it")
       (ok (search "name=\"título\"" text)))))
 
 (defun %crlf ()
